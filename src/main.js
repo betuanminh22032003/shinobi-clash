@@ -60,6 +60,9 @@ class Game {
     document.getElementById('app').appendChild(renderer.domElement);
 
     this.scene = new THREE.Scene();
+    // short-lived jutsu/effect objects live here so a match reset can wipe them
+    this.transient = new THREE.Group();
+    this.scene.add(this.transient);
     this.camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 3000);
     this.camera.position.set(0, 4, 14);
     this.camLook = new THREE.Vector3(0, 1, 0);
@@ -181,7 +184,7 @@ class Game {
     g.rotation.x = -Math.PI / 2;
     g.position.set(pos.x, 0.04, pos.z);
     g.scale.setScalar(radius);
-    this.scene.add(g);
+    this.transient.add(g);
     let t = 0;
     this.addEffect((dt) => {
       t += dt;
@@ -189,7 +192,7 @@ class Game {
       fill.scale.setScalar(Math.min(1, k));
       mat.opacity = 0.5 + Math.sin(t * 40) * 0.3;
       if (k >= 1) {
-        this.scene.remove(g);
+        this.transient.remove(g);
         return false;
       }
       return true;
@@ -211,7 +214,7 @@ class Game {
     m.castShadow = true;
     m.position.set(pos.x, -2.4 * scale, pos.z);
     m.rotation.set(rand(-0.25, 0.25), rand(0, 6), rand(-0.25, 0.25));
-    this.scene.add(m);
+    this.transient.add(m);
     this.fx.dust(new THREE.Vector3(pos.x, 0, pos.z), 6, 1);
     this.fx.rocks(new THREE.Vector3(pos.x, 0.3, pos.z), 3, 5);
     let t = 0;
@@ -221,7 +224,7 @@ class Game {
       else if (t < 0.9) m.position.y = 0;
       else m.position.y = -2.4 * scale * ((t - 0.9) / 0.4);
       if (t > 1.3) {
-        this.scene.remove(m);
+        this.transient.remove(m);
         geo.dispose();
         return false;
       }
@@ -239,7 +242,7 @@ class Game {
     m.castShadow = true;
     m.position.copy(pos);
     m.rotation.set(0.2, yaw, 0.3);
-    this.scene.add(m);
+    this.transient.add(m);
     const v = new THREE.Vector3(rand(-1, 1), 3, rand(-1, 1));
     let t = 0;
     this.addEffect((dt) => {
@@ -253,7 +256,7 @@ class Game {
       } else m.rotation.x += dt * 4;
       if (t > 2.2) {
         this.fx.smokePuff(m.position, 10, 0.5);
-        this.scene.remove(m);
+        this.transient.remove(m);
         return false;
       }
       return true;
@@ -347,6 +350,7 @@ class Game {
     this.effects.length = 0;
     this.simTimers.length = 0;
     this.uiTimers.length = 0;
+    this.transient.clear();
     this.fx.clear();
     this.audio.stopAllCharges();
     this.timeScale = 1;
@@ -445,6 +449,7 @@ class Game {
     this.projectiles = [];
     this.effects.length = 0;
     this.simTimers.length = 0;
+    this.transient.clear();
     this.fx.clear();
     f1.reset(new THREE.Vector3(-5, 0, 0), Math.PI / 2);
     f2.reset(new THREE.Vector3(5, 0, 0), -Math.PI / 2);
@@ -554,7 +559,23 @@ class Game {
     this.frame(Math.min(this.clock.getDelta(), 1 / 20));
   }
 
+  /** Drops render resolution if the machine can't hold ~45 fps. */
+  adaptQuality(rdt) {
+    if (document.hidden) return;
+    this.perfT = (this.perfT || 0) + rdt;
+    this.perfN = (this.perfN || 0) + 1;
+    if (this.perfT < 4) return;
+    const fps = this.perfN / this.perfT;
+    this.perfT = this.perfN = 0;
+    const pr = this.renderer.getPixelRatio();
+    if (fps < 45 && pr > 0.8) {
+      this.renderer.setPixelRatio(Math.max(0.75, pr - 0.25));
+      this.resize();
+    }
+  }
+
   frame(rdt, render = true) {
+    if (render) this.adaptQuality(rdt);
     this.realTime += rdt;
     this.handleGlobalKeys();
     this.ui.navigate();
@@ -710,7 +731,8 @@ class Game {
       } else if (s.follow) {
         const f = s.follow;
         const fw = f.forwardVec();
-        const ang = Math.atan2(fw.x, fw.z) + (s.front ? 0.35 : 1.2) + this.realTime * (s.orbitSpeed || 0.08);
+        if (s.t0 === undefined) s.t0 = this.realTime;
+        const ang = Math.atan2(fw.x, fw.z) + (s.front ? 0.35 : 1.2) + (this.realTime - s.t0) * (s.orbitSpeed || 0.08);
         const r = s.front ? 3.6 : 5.5;
         desiredPos.set(f.pos.x + Math.sin(ang) * r, f.pos.y + (s.front ? 1.4 : 2.2), f.pos.z + Math.cos(ang) * r);
         desiredLook.set(f.pos.x, f.pos.y + (s.front ? 1.2 : 0.6), f.pos.z);

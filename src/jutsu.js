@@ -31,7 +31,7 @@ export class Projectile {
     this.light = null;
     if (this.obj) {
       this.obj.position.copy(this.pos);
-      game.scene.add(this.obj);
+      game.transient.add(this.obj);
     }
     if (o.light) {
       this.light = game.fx.lights.acquire();
@@ -97,7 +97,7 @@ export class Projectile {
     if (this.dead) return;
     this.dead = true;
     if (this.obj) {
-      this.g.scene.remove(this.obj);
+      this.g.transient.remove(this.obj);
       this.obj.traverse((o) => {
         if (o.isMesh && o.material.dispose && o.userData.disposable) o.material.dispose();
       });
@@ -167,7 +167,7 @@ function attachToBone(obj, fighter, bone, offset) {
 function spawnFireTrail(g, pos, scale = 1) {
   for (let i = 0; i < 3; i++) {
     const t = Math.random();
-    _c.setRGB(4 + t * 2, 1.2 + t * 1.5, 0.2);
+    _c.setRGB(2.4 + t * 1.2, 0.45 + t * 0.9, 0.06);
     g.fx.glow.spawn({
       x: pos.x + rand(-0.2, 0.2) * scale, y: pos.y + rand(-0.2, 0.2) * scale, z: pos.z + rand(-0.2, 0.2) * scale,
       vx: rand(-1, 1), vy: rand(1, 3), vz: rand(-1, 1),
@@ -189,7 +189,7 @@ function aimAt(f, h = 1.1) {
 }
 
 const WIND_A = 0x2fd8ff, WIND_B = 0xe8ffff;
-const FIRE_A = 0xff3a00, FIRE_B = 0xffd36a;
+const FIRE_A = 0xff2200, FIRE_B = 0xff8a1a;
 const LIGHT_COL = new THREE.Color(1.6, 1.3, 3.2);
 const EARTH_COL = new THREE.Color(1, 0.7, 0.3);
 
@@ -232,14 +232,14 @@ export const JUTSU = {
   wind: {
     special(f, g) {
       const orb = makeOrb(0x1aa8ff, 0x9ff6ff, 0.05, { intensity: 2, core: 0xc8f8ff, coreScale: 0.45 });
-      g.scene.add(orb);
+      g.transient.add(orb);
       let hit = false, hitT = 0;
       const light = g.fx.lights.acquire();
       if (light) { light.color.set(0x5ff2ff); light.distance = 8; }
       g.audio.play('windCharge');
       const fwd = f.forwardVec();
       const cleanup = () => {
-        g.scene.remove(orb);
+        g.transient.remove(orb);
         g.fx.lights.release(light);
       };
       return {
@@ -303,10 +303,10 @@ export const JUTSU = {
 
     ultimate(f, g) {
       const orb = makeWindShuriken(0.1);
-      g.scene.add(orb);
+      g.transient.add(orb);
       let thrown = false;
       g.audio.play('ultCharge');
-      const cleanup = () => { if (!thrown) g.scene.remove(orb); };
+      const cleanup = () => { if (!thrown) g.transient.remove(orb); };
       return {
         pose: () => (thrown ? POSES.castHand : POSES.skyCall),
         cancel: cleanup,
@@ -330,7 +330,7 @@ export const JUTSU = {
               g.audio.play('windBlast');
               let grind = 0, ticks = 0, latched = false;
               const pos = orb.position.clone();
-              g.scene.remove(orb);
+              g.transient.remove(orb);
               g.addProjectile(new Projectile(g, f, {
                 pos, vel: dir.multiplyScalar(17), radius: 1.1, life: 3, obj: orb, homing: 2.2,
                 light: { color: new THREE.Color(0x5ff2ff), intensity: 60, distance: 16 },
@@ -406,7 +406,7 @@ export const JUTSU = {
             f.faceOpponent();
             const dir = aimAt(f, 0.9);
             const pos = f.boneWorld('head', new THREE.Vector3()).add(f.forwardVec().multiplyScalar(0.45));
-            const ball = makeOrb(FIRE_A, FIRE_B, 0.55, { core: 0xffc060, intensity: 2.2, coreScale: 0.5 });
+            const ball = makeOrb(FIRE_A, FIRE_B, 0.55, { core: 0xffa040, intensity: 2.0, coreScale: 0.5 });
             g.audio.play('fireball');
             g.addProjectile(new Projectile(g, f, {
               pos, vel: dir.multiplyScalar(19), radius: 0.6, life: 1.6, obj: ball, homing: 0.6,
@@ -466,11 +466,11 @@ export const JUTSU = {
             for (let i = 0; i < 18; i++) {
               const s = makeOrb(FIRE_A, FIRE_B, 0.9 * (1 - i / 22), { core: 0xff9a40, intensity: 1.9, coreScale: 0.45 });
               s.position.copy(pos);
-              g.scene.add(s);
+              g.transient.add(s);
               segs.push(s);
             }
             const hist = [];
-            const cleanup = () => segs.forEach((s) => g.scene.remove(s));
+            const cleanup = () => segs.forEach((s) => g.transient.remove(s));
             g.addProjectile(new Projectile(g, f, {
               pos, vel: dir.multiplyScalar(15), radius: 1.3, life: 3.2, obj: head, homing: 2.6, groundHit: false,
               light: { color: new THREE.Color(0xff6a1a), intensity: 120, distance: 24 },
@@ -516,7 +516,7 @@ export const JUTSU = {
   // ============================== LIGHTNING =================================
   lightning: {
     special(f, g) {
-      const bolts = [new Bolt(g.scene, LIGHT_COL.clone().multiplyScalar(1.5), 8), new Bolt(g.scene, LIGHT_COL.clone().multiplyScalar(1.5), 8), new Bolt(g.scene, LIGHT_COL.clone().multiplyScalar(1.5), 8)];
+      const bolts = [new Bolt(g.transient, LIGHT_COL.clone().multiplyScalar(1.5), 8), new Bolt(g.transient, LIGHT_COL.clone().multiplyScalar(1.5), 8), new Bolt(g.transient, LIGHT_COL.clone().multiplyScalar(1.5), 8)];
       let hit = false, hitT = 0, dashing = false;
       const fwd = new THREE.Vector3();
       const light = g.fx.lights.acquire();
@@ -572,7 +572,7 @@ export const JUTSU = {
     },
 
     ultimate(f, g) {
-      const skyBolt = new Bolt(g.scene, LIGHT_COL.clone().multiplyScalar(2), 18);
+      const skyBolt = new Bolt(g.transient, LIGHT_COL.clone().multiplyScalar(2), 18);
       let released = false;
       g.audio.play('ultCharge');
       const cleanup = () => skyBolt.dispose();
@@ -595,7 +595,7 @@ export const JUTSU = {
                 const at = new THREE.Vector3(o.pos.x, 0, o.pos.z);
                 g.telegraph(at, final ? 3.2 : 1.8, LIGHT_COL, 0.3);
                 g.schedule(0.3, () => {
-                  const b = new Bolt(g.scene, LIGHT_COL.clone().multiplyScalar(final ? 4 : 3), 20);
+                  const b = new Bolt(g.transient, LIGHT_COL.clone().multiplyScalar(final ? 4 : 3), 20);
                   const top = at.clone().add(new THREE.Vector3(rand(-3, 3), 40, rand(-3, 3)));
                   let life = 0;
                   g.addEffect((dt2) => {
@@ -695,7 +695,7 @@ export const JUTSU = {
             rock.castShadow = true;
             const startY = 42;
             rock.position.set(at.x + 10, startY, at.z - 6);
-            g.scene.add(rock);
+            g.transient.add(rock);
             let life = 0;
             g.addEffect((dt2) => {
               life += dt2;
@@ -705,7 +705,7 @@ export const JUTSU = {
               rock.rotation.z += dt2 * 1.3;
               spawnFireTrail(g, rock.position.clone().add(new THREE.Vector3(rand(-2, 2), 2, rand(-2, 2))), 2.5);
               if (k >= 1) {
-                g.scene.remove(rock);
+                g.transient.remove(rock);
                 g.fx.explosion(at.clone().setY(1), new THREE.Color(1.6, 0.7, 0.2), 2.4);
                 g.fx.rocks(at.clone().setY(0.5), 30, 13);
                 for (let i = 0; i < 8; i++) {

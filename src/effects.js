@@ -452,7 +452,7 @@ export class FX {
     this.glow.spawn({ x: pos.x, y: pos.y, z: pos.z, color: tmpC, size: 0.45 * power, sizeEnd: 1.0 * power, life: 0.1 });
     tmpC.copy(color).multiplyScalar(1.6);
     this.glow.spawn({ x: pos.x, y: pos.y, z: pos.z, color: tmpC, size: 0.9 * power, sizeEnd: 1.8 * power, life: 0.16, alpha: 0.5 });
-    this.waves.spawn(pos, tmpC.copy(color).multiplyScalar(2), { size: 0.5 + power * 0.6, life: 0.18, flat: false, normal: new THREE.Vector3(rand(-1, 1), rand(-1, 1), rand(-1, 1)) });
+    this.waves.spawn(pos, tmpC.copy(color).multiplyScalar(0.9), { size: 0.5 + power * 0.6, life: 0.18, flat: false, normal: new THREE.Vector3(rand(-1, 1), rand(-1, 1), rand(-1, 1)) });
     this.lights.flash(pos, color, 12 * power, 6, 0.12);
   }
 
@@ -500,7 +500,7 @@ export class FX {
       const th = rand(0, Math.PI * 2), ph = rand(-1, 1);
       const r = Math.sqrt(1 - ph * ph);
       const s = rand(0.3, 1) * speed;
-      tmpC.copy(color).multiplyScalar(rand(1.5, 4));
+      tmpC.copy(color).multiplyScalar(rand(1, 2.4));
       this.glow.spawn({
         x: pos.x, y: pos.y, z: pos.z,
         vx: Math.cos(th) * r * s, vy: ph * s, vz: Math.sin(th) * r * s,
@@ -512,18 +512,18 @@ export class FX {
   explosion(pos, color, scale = 1) {
     this.burst(pos, color, 80 * scale, 14 * scale, 0.35 * scale, 0.9);
     for (let i = 0; i < 25 * scale; i++) {
-      tmpC.copy(color).multiplyScalar(rand(1.5, 3));
+      tmpC.copy(color).multiplyScalar(rand(0.7, 1.4));
       const th = rand(0, Math.PI * 2);
       this.glow.spawn({
         x: pos.x, y: pos.y, z: pos.z,
         vx: Math.cos(th) * rand(1, 5) * scale, vy: rand(0, 5) * scale, vz: Math.sin(th) * rand(1, 5) * scale,
-        color: tmpC, size: rand(1, 2) * scale, sizeEnd: rand(2.5, 4) * scale, life: rand(0.3, 0.6), drag: 3, alpha: 0.6,
+        color: tmpC, size: rand(0.8, 1.6) * scale, sizeEnd: rand(2, 3.2) * scale, life: rand(0.3, 0.6), drag: 3, alpha: 0.45,
       });
     }
     this.smokePuff(pos, Math.floor(30 * scale), 1.3 * scale, 0x3a3532);
     this.waves.spawn(new THREE.Vector3(pos.x, 0.05, pos.z), tmpC.copy(color).multiplyScalar(2.5), { size: 7 * scale, life: 0.5 });
     this.waves.spawn(pos, tmpC.copy(color).multiplyScalar(2), { size: 5 * scale, life: 0.35, flat: false, normal: new THREE.Vector3(0, 0.3, 1) });
-    this.lights.flash(pos, color, 120 * scale, 25 * scale, 0.5);
+    this.lights.flash(pos, color, 50 * scale, 20 * scale, 0.45);
   }
 
   rocks(pos, n = 12, power = 6) {

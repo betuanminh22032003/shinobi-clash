@@ -284,7 +284,7 @@ export function buildRig(def) {
     scarfSegs.push(m);
   }
   const scarfAnchor = joint(J.chest, 0, 0.27, -0.1);
-  chains.push({ anchor: scarfAnchor, meshes: scarfSegs, segLen: 0.13, nodes: null, width: 1, gravity: 2.2, wind: 7 });
+  chains.push({ anchor: scarfAnchor, meshes: scarfSegs, segLen: 0.13, nodes: null, width: 1, gravity: 3, wind: 4 });
 
   if (def.hair === 'ponytail') {
     const ptGeo = new THREE.CylinderGeometry(0.035, 0.02, 1, 8);

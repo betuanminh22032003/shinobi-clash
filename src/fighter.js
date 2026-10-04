@@ -39,6 +39,7 @@ export class Fighter {
   }
 
   reset(pos, yaw) {
+    if (this.jutsu && this.jutsu.cancel) this.jutsu.cancel();
     this.pos.copy(pos);
     this.vel.set(0, 0, 0);
     this.yaw = yaw;
@@ -73,6 +74,8 @@ export class Fighter {
   }
 
   dispose() {
+    if (this.jutsu && this.jutsu.cancel) this.jutsu.cancel();
+    this.jutsu = null;
     disposeRig(this.rig, this.game.scene);
     for (const t of Object.values(this.trails)) t.ribbon.dispose();
   }
