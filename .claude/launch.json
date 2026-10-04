@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "shinobi-clash", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 5180 }
+  ]
+}

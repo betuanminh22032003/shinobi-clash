@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Shinobi Clash — Huyết Chiến Thung Lũng</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:ital,wght@0,400;0,600;0,800;0,900;1,900&family=Noto+Serif+JP:wght@700;900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <!-- loading -->
+    <div id="loading" class="screen show">
+      <div class="kanji-big">忍</div>
+      <div class="load-text">Đang rèn kiếm & tạo thế giới...</div>
+      <div class="load-bar"><div id="loadFill"></div></div>
+    </div>
+
+    <!-- in-game HUD -->
+    <div id="hud" class="hidden">
+      <div class="bars">
+        <div class="side p1">
+          <div class="portrait" id="p1Portrait"><span></span></div>
+          <div class="info">
+            <div class="name" id="p1Name">KAITO</div>
+            <div class="hp"><div class="hp-lag" id="p1HpLag"></div><div class="hp-fill" id="p1Hp"></div></div>
+            <div class="sub-row"><div class="subs" id="p1Subs"></div><div class="rounds" id="p1Rounds"></div></div>
+          </div>
+        </div>
+        <div class="center">
+          <div class="timer" id="timer">99</div>
+          <div class="round-label" id="roundLabel">HIỆP 1</div>
+        </div>
+        <div class="side p2">
+          <div class="info">
+            <div class="name" id="p2Name">REN</div>
+            <div class="hp"><div class="hp-lag" id="p2HpLag"></div><div class="hp-fill" id="p2Hp"></div></div>
+            <div class="sub-row"><div class="rounds" id="p2Rounds"></div><div class="subs" id="p2Subs"></div></div>
+          </div>
+          <div class="portrait" id="p2Portrait"><span></span></div>
+        </div>
+      </div>
+      <div class="chakra-row">
+        <div class="chakra p1"><div class="ck-fill" id="p1Ck"></div><div class="ck-marks"></div><span class="ck-label" id="p1CkLabel">CHAKRA</span></div>
+        <div class="chakra p2"><div class="ck-fill" id="p2Ck"></div><div class="ck-marks"></div><span class="ck-label" id="p2CkLabel">CHAKRA</span></div>
+      </div>
+      <div class="combo p1" id="p1Combo"></div>
+      <div class="combo p2" id="p2Combo"></div>
+      <div class="toast p1" id="p1Toast"></div>
+      <div class="toast p2" id="p2Toast"></div>
+      <div class="help-hint" id="helpHint">ESC: Tạm dừng · H: Bảng phím</div>
+    </div>
+
+    <div id="letterbox" class="hidden"><div class="lb top"></div><div class="lb bottom"></div></div>
+    <div id="jutsuBanner"><div class="jb-kanji" id="jbKanji">風</div><div class="jb-text"><div class="jb-owner" id="jbOwner">KAITO</div><div class="jb-name" id="jbName">Thiên Phong Đại Tuyền</div></div></div>
+    <div id="banner"></div>
+    <div id="flash"></div>
+
+    <!-- title -->
+    <div id="title" class="screen">
+      <div class="title-wrap">
+        <div class="logo-kanji">忍闘</div>
+        <h1 class="logo">SHINOBI <span>CLASH</span></h1>
+        <div class="subtitle">Huyết Chiến Thung Lũng Hoàng Hôn</div>
+        <div class="menu" id="mainMenu">
+          <button data-act="cpu" class="sel">Đấu Với Máy</button>
+          <button data-act="pvp">2 Người Chơi</button>
+          <button data-act="training">Luyện Tập</button>
+          <button data-act="controls">Điều Khiển</button>
+        </div>
+        <div class="foot">Dùng chuột hoặc ↑ ↓ + Enter · Có hỗ trợ tay cầm</div>
+      </div>
+    </div>
+
+    <!-- character select -->
+    <div id="select" class="screen">
+      <div class="sel-head" id="selHead">NGƯỜI CHƠI 1 — CHỌN NINJA</div>
+      <div class="sel-info" id="selInfo"></div>
+      <div class="cards" id="cards"></div>
+      <div class="diff hidden" id="diffRow">
+        <span>Độ khó:</span>
+        <button data-diff="easy">Dễ</button>
+        <button data-diff="normal" class="sel">Thường</button>
+        <button data-diff="hard">Khó</button>
+      </div>
+      <div class="sel-foot">← → chọn · Enter / J xác nhận · Esc quay lại</div>
+    </div>
+
+    <!-- pause -->
+    <div id="pause" class="screen dim">
+      <div class="panel">
+        <h2>TẠM DỪNG</h2>
+        <div class="menu" id="pauseMenu">
+          <button data-act="resume" class="sel">Tiếp Tục</button>
+          <button data-act="restart">Đấu Lại</button>
+          <button data-act="controls">Điều Khiển</button>
+          <button data-act="music">Nhạc: Bật</button>
+          <button data-act="quit">Về Menu</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- result -->
+    <div id="result" class="screen">
+      <div class="result-wrap">
+        <div class="result-kanji" id="resKanji">勝</div>
+        <div class="result-title" id="resTitle">KAITO CHIẾN THẮNG</div>
+        <div class="result-sub" id="resSub"></div>
+        <div class="menu row" id="resultMenu">
+          <button data-act="restart" class="sel">Đấu Lại</button>
+          <button data-act="select">Chọn Ninja</button>
+          <button data-act="quit">Về Menu</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- controls -->
+    <div id="controls" class="screen dim">
+      <div class="panel wide">
+        <h2>ĐIỀU KHIỂN</h2>
+        <div class="ctl-grid">
+          <div>
+            <h3>Người chơi 1</h3>
+            <ul>
+              <li><kbd>W A S D</kbd> Di chuyển</li>
+              <li><kbd>Space</kbd> Nhảy</li>
+              <li><kbd>J</kbd> Đánh (bấm liên tục = combo 4 đòn; trên không = cước bổ nhào)</li>
+              <li><kbd>K</kbd> Phi tiêu</li>
+              <li><kbd>L</kbd> Nhẫn thuật <small>(30 chakra)</small></li>
+              <li><kbd>O</kbd> Tuyệt kỹ <small>(100 chakra)</small></li>
+              <li><kbd>I</kbd> Giữ để đỡ đòn</li>
+              <li><kbd>U</kbd> Giữ để tụ chakra</li>
+              <li><kbd>Shift</kbd> Lướt · <b>Thế thân</b> khi bị đánh</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Người chơi 2</h3>
+            <ul>
+              <li><kbd>← ↑ → ↓</kbd> Di chuyển</li>
+              <li><kbd>Num 0</kbd> Nhảy</li>
+              <li><kbd>Num 1</kbd> Đánh</li>
+              <li><kbd>Num 2</kbd> Phi tiêu</li>
+              <li><kbd>Num 3</kbd> Nhẫn thuật</li>
+              <li><kbd>Num 6</kbd> Tuyệt kỹ</li>
+              <li><kbd>Num 5</kbd> Đỡ</li>
+              <li><kbd>Num 4</kbd> Tụ chakra</li>
+              <li><kbd>Num .</kbd> / <kbd>Num Enter</kbd> Lướt / Thế thân</li>
+            </ul>
+            <h3>Tay cầm</h3>
+            <ul>
+              <li>A nhảy · X đánh · B phi tiêu · Y nhẫn thuật</li>
+              <li>LB đỡ · RB lướt · LT tuyệt kỹ · RT tụ chakra</li>
+            </ul>
+          </div>
+        </div>
+        <p class="tip">Mẹo: Thế thân (Shift khi đang trúng đòn) dịch chuyển ra sau lưng đối thủ, để lại khúc gỗ. Có 4 lần, hồi dần theo thời gian.</p>
+        <div class="menu"><button data-act="close" class="sel">Đóng</button></div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
