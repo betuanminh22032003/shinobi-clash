@@ -322,7 +322,7 @@ export class Arena {
 
   buildTrees() {
     const trunkMat = new THREE.MeshStandardMaterial({ color: 0x3b2a22, roughness: 0.95, normalMap: this.rockTex.normalMap });
-    const leafMat = new THREE.MeshStandardMaterial({ color: 0xf2a7c3, roughness: 0.8, emissive: 0x3a0f1e, emissiveIntensity: 0.3 });
+    const leafMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, flatShading: true, emissive: 0x2a0812, emissiveIntensity: 0.35, side: THREE.DoubleSide });
     const spots = [];
     for (let i = 0; i < 9; i++) {
       const a = (i / 9) * Math.PI * 2 + 0.3;
@@ -338,9 +338,21 @@ export class Arena {
       g.translate(start.x, start.y, start.z);
       trunkGeos.push(g);
       if (depth === 0) {
-        for (let k = 0; k < 3; k++) {
-          const lg = new THREE.IcosahedronGeometry(rand(1.2, 2), 1);
-          lg.translate(end.x + rand(-1, 1), end.y + rand(-0.3, 0.8), end.z + rand(-1, 1));
+        for (let k = 0; k < 7; k++) {
+          const lg = new THREE.IcosahedronGeometry(rand(0.55, 1.05), 1);
+          lg.deleteAttribute('uv');
+          const pa = lg.attributes.position;
+          const col = new Float32Array(pa.count * 3);
+          const base = new THREE.Color().setHSL(rand(0.92, 0.97), rand(0.6, 0.85), rand(0.6, 0.74));
+          for (let v = 0; v < pa.count; v++) {
+            const j = 1 + rand(-0.3, 0.3);
+            pa.setXYZ(v, pa.getX(v) * j, pa.getY(v) * j * 0.8, pa.getZ(v) * j);
+            const l = rand(0.85, 1.12);
+            col[v * 3] = Math.min(1, base.r * l); col[v * 3 + 1] = base.g * l; col[v * 3 + 2] = base.b * l;
+          }
+          lg.setAttribute('color', new THREE.BufferAttribute(col, 3));
+          lg.computeVertexNormals();
+          lg.translate(end.x + rand(-1.3, 1.3), end.y + rand(-0.4, 1.0), end.z + rand(-1.3, 1.3));
           leafGeos.push(lg);
         }
         return;
