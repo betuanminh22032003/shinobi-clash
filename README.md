@@ -65,3 +65,9 @@ src/
   input.js       bàn phím + gamepad
   ui.js          menu, chọn nhân vật, HUD
 ```
+
+## Deploy (GitHub Pages)
+
+Đã có sẵn workflow `.github/workflows/deploy.yml`: mỗi lần push lên `master`/`main`, GitHub Actions sẽ build và deploy.
+Chỉ cần bật một lần: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+Game sẽ có ở `https://<username>.github.io/shinobi-clash/`.
