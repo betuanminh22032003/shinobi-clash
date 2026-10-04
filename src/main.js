@@ -665,7 +665,8 @@ class Game {
   }
 
   handleGlobalKeys() {
-    if (Keys.wasPressed('Escape')) {
+    const padStart = this.ui.lastPad && this.ui.lastPad.has('Start') && (this.mode === 'fight' || this.mode === 'intro' || this.paused);
+    if (Keys.wasPressed('Escape') || padStart) {
       if (this.ui.current === 'controls') this.ui.closeControls();
       else if (this.mode === 'fight' || this.mode === 'intro' || this.mode === 'roundEnd') this.togglePause(!this.paused);
     }

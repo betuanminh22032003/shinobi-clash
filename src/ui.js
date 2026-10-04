@@ -74,8 +74,33 @@ export class UI {
   }
 
   /** keyboard navigation for the active menu; called every frame */
+  /** Maps gamepad edges onto virtual key codes so menus work with a controller. */
+  padKeys() {
+    const out = new Set();
+    const pads = navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : [];
+    this.padPrev = this.padPrev || {};
+    for (const gp of pads) {
+      const prev = this.padPrev[gp.index] || [];
+      const b = gp.buttons.map((x) => x.pressed);
+      const ay = gp.axes[1] || 0, ax = gp.axes[0] || 0;
+      b[20] = ay < -0.6; b[21] = ay > 0.6; b[22] = ax < -0.6; b[23] = ax > 0.6;
+      const edge = (i) => b[i] && !prev[i];
+      if (edge(12) || edge(20)) out.add('ArrowUp');
+      if (edge(13) || edge(21)) out.add('ArrowDown');
+      if (edge(14) || edge(22)) out.add('ArrowLeft');
+      if (edge(15) || edge(23)) out.add('ArrowRight');
+      if (edge(0)) out.add('Enter');
+      if (edge(1)) out.add('Escape');
+      if (edge(9)) out.add('Start');
+      this.padPrev[gp.index] = b;
+    }
+    return out;
+  }
+
   navigate() {
-    const pressed = (...c) => c.some((k) => Keys.wasPressed(k));
+    const pk = this.padKeys();
+    this.lastPad = pk;
+    const pressed = (...c) => c.some((k) => Keys.wasPressed(k) || pk.has(k));
     if (this.current === 'select') return this.navigateSelect(pressed);
     const m = this.activeMenu;
     if (!m) return;
