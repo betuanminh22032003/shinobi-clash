@@ -151,7 +151,26 @@ class Game {
   hitstop(t) {
     this.hitstopT = Math.max(this.hitstopT, t);
   }
+  /** Opposing projectiles that meet cancel out in a burst (bigger one survives). */
+  clashProjectiles() {
+    const ps = this.projectiles;
+    for (let i = 0; i < ps.length; i++) {
+      for (let j = i + 1; j < ps.length; j++) {
+        const a = ps[i], b = ps[j];
+        if (a.dead || b.dead || a.owner === b.owner) continue;
+        if (a.pos.distanceTo(b.pos) > a.radius + b.radius) continue;
+        const mid = a.pos.clone().lerp(b.pos, 0.5);
+        this.fx.explosion(mid, new THREE.Color(1.4, 1.1, 0.9), 0.7 + Math.min(a.radius, b.radius) * 0.4);
+        this.audio.play('explosion');
+        this.shake(0.3);
+        const big = a.radius > b.radius * 1.8 ? a : b.radius > a.radius * 1.8 ? b : null;
+        for (const p of [a, b]) if (p !== big) p.kill();
+      }
+    }
+  }
+
   shake(a) {
+    if (a >= 0.3) this.fovKick = Math.max(this.fovKick || 0, a * 6);
     this.shakeAmt = Math.min(1.2, Math.max(this.shakeAmt, a));
     this.aberr = Math.max(this.aberr, a * 0.012);
   }
@@ -419,6 +438,17 @@ class Game {
     }
   }
 
+  startArcade(p1) {
+    const others = CHARACTERS.filter((c) => c !== p1).sort(() => Math.random() - 0.5);
+    this.arcade = { p1, ladder: others, diffs: ['easy', 'normal', 'hard'], stage: 0 };
+    this.startArcadeStage();
+  }
+
+  startArcadeStage() {
+    const a = this.arcade;
+    this.startMatch({ mode: 'arcade', p1: a.p1, p2: a.ladder[a.stage], diff: a.diffs[a.stage] });
+  }
+
   startMatch(cfg) {
     this.clearMatch();
     this.cfg = cfg;
@@ -515,8 +545,16 @@ class Game {
         mw.setState('win');
         this.camShot = { follow: mw, front: true, lambda: 2, orbitSpeed: 0.25 };
         this.ui.hud(false);
-        const label = this.cfg.mode === 'cpu' ? (mw.index === 0 ? 'Bạn đã đánh bại máy!' : 'Máy đã chiến thắng — thử lại nhé!') : `Người chơi ${mw.index + 1} thắng ${this.wins[mw.index]} - ${this.wins[1 - mw.index]}`;
-        this.ui.result(mw, label);
+        if (this.cfg.mode === 'arcade') {
+          const a = this.arcade;
+          const won = mw.index === 0;
+          if (won && a.stage >= 2) this.ui.result(mw, 'Bạn đã đánh bại cả ba ninja và chinh phục Thung Lũng Hoàng Hôn!', { title: 'CHINH PHỤC THỬ THÁCH', kanji: '覇' });
+          else if (won) this.ui.result(mw, `Ải ${a.stage + 1}/3 hoàn thành — đối thủ tiếp theo: ${a.ladder[a.stage + 1].name}`, { next: true });
+          else this.ui.result(mw, `Gục ngã ở ải ${a.stage + 1}/3 — đứng dậy và thử lại!`, { title: 'THẤT BẠI', kanji: '敗' });
+        } else {
+          const label = this.cfg.mode === 'cpu' ? (mw.index === 0 ? 'Bạn đã đánh bại máy!' : 'Máy đã chiến thắng — thử lại nhé!') : `Người chơi ${mw.index + 1} thắng ${this.wins[mw.index]} - ${this.wins[1 - mw.index]}`;
+          this.ui.result(mw, label);
+        }
         this.audio.setIntensity(0);
       } else {
         this.round++;
@@ -542,7 +580,10 @@ class Game {
   }
 
   onResult(act) {
-    if (act === 'restart') this.startMatch(this.cfg);
+    if (act === 'next') {
+      this.arcade.stage++;
+      this.startArcadeStage();
+    } else if (act === 'restart') this.startMatch(this.cfg);
     else if (act === 'select') this.goSelect(this.cfg.mode);
     else this.showTitle();
   }
@@ -670,6 +711,7 @@ class Game {
       }
       if (!this.cine) {
         this.projectiles = this.projectiles.filter((p) => p.update(simDt));
+        this.clashProjectiles();
       }
       for (let i = this.simTimers.length - 1; i >= 0; i--) {
         const h = this.simTimers[i];
@@ -786,7 +828,8 @@ class Game {
       this.shakeAmt *= Math.exp(-7 * rdt);
     }
     cam.lookAt(this.camLook);
-    const targetFov = this.cine ? 40 : this.mode === 'select' ? 38 : 48;
+    this.fovKick = Math.max(0, (this.fovKick || 0) - rdt * 25);
+    const targetFov = (this.cine ? 40 : this.mode === 'select' ? 38 : 48) - (this.fovKick || 0);
     if (Math.abs(cam.fov - targetFov) > 0.01) {
       cam.fov = damp(cam.fov, targetFov, 4, rdt);
       cam.updateProjectionMatrix();

@@ -17,10 +17,12 @@ Build bản tĩnh: `npm run build` → thư mục `dist/`.
 
 ## Chế độ
 
+- **Thử thách** — vượt 3 ải liên tiếp với 3 ninja còn lại, độ khó tăng dần (Dễ → Thường → Khó).
 - **Đấu với máy** — 3 độ khó (Dễ / Thường / Khó), thắng 2/3 hiệp.
 - **2 người chơi** — cùng bàn phím (P2 dùng phím mũi tên + Numpad) hoặc tay cầm.
 - **Luyện tập** — bao cát đứng yên, chakra hồi nhanh, không giới hạn thời gian.
 - Màn hình tiêu đề tự chạy trận AI vs AI làm nền.
+- Hai chiêu phóng (cầu lửa, phi tiêu, cầu gió...) va vào nhau sẽ triệt tiêu — chiêu lớn hơn hẳn thì xuyên qua.
 
 ## Nhân vật
 

@@ -496,6 +496,15 @@ export class Arena {
       this.lanternLights[i].intensity = 11 + Math.sin(this.time * 13 + i * 3) * 0.8 + Math.sin(this.time * 7.3 + i) * 0.6;
     }
 
+    // golden dust motes drifting in the low sun
+    if (fx && Math.random() < dt * 14) {
+      const c = new THREE.Color(1.3, 0.95, 0.6);
+      fx.glow.spawn({
+        x: rand(-16, 16), y: rand(0.3, 5), z: rand(-16, 16),
+        vx: rand(0.1, 0.5), vy: rand(-0.05, 0.15), vz: rand(-0.2, 0.2),
+        color: c, size: rand(0.03, 0.07), sizeEnd: 0.02, life: rand(3, 6), alpha: 0.7,
+      });
+    }
     // waterfall mist
     if (fx && Math.random() < dt * 30) {
       const c = new THREE.Color(0.8, 0.85, 0.9);

@@ -79,7 +79,7 @@ export class UI {
     if (this.current === 'select') return this.navigateSelect(pressed);
     const m = this.activeMenu;
     if (!m) return;
-    const btns = [...m.querySelectorAll('button')];
+    const btns = [...m.querySelectorAll('button:not(.hidden)')];
     if (!btns.length) return;
     let i = btns.findIndex((b) => b.classList.contains('sel'));
     const row = m.classList.contains('row');
@@ -126,7 +126,7 @@ export class UI {
 
   updateSelectHead() {
     const s = this.sel;
-    const label = s.step === 0 ? 'NGƯỜI CHƠI 1 — CHỌN NINJA' : s.mode === 'pvp' ? 'NGƯỜI CHƠI 2 — CHỌN NINJA' : s.mode === 'training' ? 'CHỌN BAO CÁT TẬP LUYỆN' : 'CHỌN ĐỐI THỦ';
+    const label = s.mode === 'arcade' ? 'THỬ THÁCH — CHỌN NINJA CỦA BẠN' : s.step === 0 ? 'NGƯỜI CHƠI 1 — CHỌN NINJA' : s.mode === 'pvp' ? 'NGƯỜI CHƠI 2 — CHỌN NINJA' : s.mode === 'training' ? 'CHỌN BAO CÁT TẬP LUYỆN' : 'CHỌN ĐỐI THỦ';
     $('selHead').textContent = label;
     $('selHead').style.color = s.step === 0 ? 'var(--p1)' : 'var(--p2)';
   }
@@ -164,6 +164,10 @@ export class UI {
       return;
     }
     s.picks[s.step] = CHARACTERS[s.idx];
+    if (s.mode === 'arcade') {
+      this.g.startArcade(s.picks[0]);
+      return;
+    }
     document.querySelectorAll('.card')[s.idx].classList.add(s.step === 0 ? 'p1pick' : 'p2pick');
     if (s.step === 0) {
       s.step = 1;
@@ -243,7 +247,8 @@ export class UI {
     const t = $('timer');
     t.textContent = infinite ? '∞' : Math.max(0, Math.ceil(time));
     t.classList.toggle('low', !infinite && time < 10);
-    $('roundLabel').textContent = infinite ? 'LUYỆN TẬP' : `HIỆP ${round}`;
+    const stage = this.g.cfg?.mode === 'arcade' ? `ẢI ${this.g.arcade.stage + 1}/3 · ` : '';
+    $('roundLabel').textContent = infinite ? 'LUYỆN TẬP' : `${stage}HIỆP ${round}`;
   }
 
   combo(i, n) {
@@ -307,11 +312,14 @@ export class UI {
     $('flash').style.opacity = a;
   }
 
-  result(winner, sub) {
-    $('resTitle').textContent = winner ? `${winner.def.name} CHIẾN THẮNG` : 'HÒA';
-    $('resKanji').textContent = winner ? '勝' : '和';
+  result(winner, sub, { title, kanji, next = false } = {}) {
+    $('resTitle').textContent = title || (winner ? `${winner.def.name} CHIẾN THẮNG` : 'HÒA');
+    $('resKanji').textContent = kanji || (winner ? '勝' : '和');
     $('resSub').textContent = sub;
-    $('resultMenu').querySelectorAll('button').forEach((b, i) => b.classList.toggle('sel', i === 0));
+    $('btnNext').classList.toggle('hidden', !next);
+    $('btnRestart').textContent = next ? 'Đấu Lại' : this.g.cfg?.mode === 'arcade' ? 'Thử Lại' : 'Đấu Lại';
+    const btns = [...$('resultMenu').querySelectorAll('button:not(.hidden)')];
+    $('resultMenu').querySelectorAll('button').forEach((b) => b.classList.toggle('sel', b === btns[0]));
     this.show('result');
   }
 
