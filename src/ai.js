@@ -100,6 +100,8 @@ export class AIController {
     if (f.state === 'attack') {
       // continue combo
       if (Math.random() < c.combo * dt * 14 && dist < 2.6) out.attack = true;
+      // occasionally cut the string into a jutsu for a real combo
+      if (o.state === 'hit' && f.chakra >= 30 && Math.random() < c.jutsu * dt * 2.5) out.special = true;
       return out;
     }
 

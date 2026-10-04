@@ -9,6 +9,7 @@ import { JUTSU } from './jutsu.js';
 const GRAVITY = 32;
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
+const _col = new THREE.Color();
 
 export class Fighter {
   constructor(def, game, index) {
@@ -54,6 +55,7 @@ export class Fighter {
     this.moveName = null;
     this.hitDone = new Set();
     this.queued = null;
+    this.jutsuQ = null;
     this.invuln = 0;
     this.grounded = true;
     this.airAttackUsed = false;
@@ -138,6 +140,10 @@ export class Fighter {
     this.dispHp = damp(this.dispHp, this.hp, 3, dt);
 
     if (input.attack) this.queued = { k: 'attack', t: 0.25 };
+    // short buffer so a jutsu pressed slightly early still cancels the current hit
+    if (input.special || input.shuriken || input.ultimate) {
+      this.jutsuQ = { special: input.special, shuriken: input.shuriken, ultimate: input.ultimate, t: 0.25 };
+    } else if (this.jutsuQ && (this.jutsuQ.t -= dt) <= 0) this.jutsuQ = null;
     if (this.queued) {
       this.queued.t -= dt;
       if (this.queued.t <= 0) this.queued = null;
@@ -327,6 +333,27 @@ export class Fighter {
         this.endMove();
       }
       return;
+    }
+    // jutsu cancel: J, J J or J J J can be cut short into a jutsu / shuriken for a true combo
+    if (m.next && t >= m.cancel) {
+      const cancelInto = (fn, hold) => {
+        if (m.trail) this.trails[m.trail].active = false;
+        this.queued = null;
+        this.jutsuQ = null;
+        // a cancel only counts as a combo if the target is still reeling: keep them stunned until it lands
+        const o = this.opponent;
+        if (o.state === 'hit') o.hitStun = Math.max(o.hitStun, o.stateT + hold);
+        fn();
+      };
+      const q = this.jutsuQ || {};
+      if ((input.ultimate || q.ultimate) && this.chakra >= 100) return cancelInto(() => this.startJutsu('ultimate'), 0.5);
+      if ((input.special || q.special) && this.chakra >= 30 && this.cooldowns.special <= 0) return cancelInto(() => this.startJutsu('special'), this.def.element === 'earth' ? 0.75 : 0.6);
+      if ((input.shuriken || q.shuriken) && this.cooldowns.throw <= 0) {
+        return cancelInto(() => {
+          this.cooldowns.throw = 0.7;
+          this.startMove('throw');
+        }, 0.35);
+      }
     }
     // combo chain
     if (m.next && t >= m.cancel && this.queued && this.queued.k === 'attack') {
@@ -553,7 +580,7 @@ export class Fighter {
       g.fx.glow.spawn({
         x: this.pos.x + Math.cos(a) * r, y: this.pos.y + rand(0, 0.4), z: this.pos.z + Math.sin(a) * r,
         vx: -Math.cos(a) * 0.4, vy: rand(2.5, 5), vz: -Math.sin(a) * 0.4,
-        color: _w.set(c.r * 2.5, c.g * 2.5, c.b * 2.5), size: rand(0.15, 0.35), sizeEnd: 0.02, life: rand(0.5, 0.9), drag: 1,
+        color: _col.setRGB(c.r * 2.5, c.g * 2.5, c.b * 2.5), size: rand(0.15, 0.35), sizeEnd: 0.02, life: rand(0.5, 0.9), drag: 1,
       });
     }
     if (Math.random() < dt * 6) g.fx.waves.spawn(new THREE.Vector3(this.pos.x, 0.05, this.pos.z), c.clone().multiplyScalar(1.5), { size: 2.2, life: 0.5 });
@@ -596,7 +623,7 @@ export class Fighter {
     const c = this.color;
     g.fx.glow.spawn({
       x: this.pos.x + rand(-0.2, 0.2), y: this.pos.y + rand(0.4, 1.5), z: this.pos.z + rand(-0.2, 0.2),
-      color: _w.set(c.r * 1.5, c.g * 1.5, c.b * 1.5), size: 0.5, sizeEnd: 0, life: 0.25, alpha: 0.5,
+      color: _col.setRGB(c.r * 1.5, c.g * 1.5, c.b * 1.5), size: 0.5, sizeEnd: 0, life: 0.25, alpha: 0.5,
     });
     if (this.stateT >= 0.26) {
       this.vel.x *= 0.4;

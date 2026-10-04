@@ -35,6 +35,8 @@ Build bản tĩnh: `npm run build` → thư mục `dist/`.
 
 ## Điều khiển
 
+Xem cách ra combo chi tiết trong [COMBO.md](COMBO.md).
+
 | Hành động | P1 | P2 | Tay cầm |
 |---|---|---|---|
 | Di chuyển | W A S D | Mũi tên | Cần trái |
