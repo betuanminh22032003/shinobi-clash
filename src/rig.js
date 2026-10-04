@@ -155,14 +155,10 @@ export function buildRig(def) {
   J.neck.add(neck);
 
   J.head = joint(J.neck, 0, 0.1, 0);
-  const head = sphere(0.118, mats.skin, 24, 18);
-  head.scale.set(0.92, 1.06, 0.98);
+  const head = new THREE.Mesh(sculptHead(female), mats.skin);
+  head.castShadow = head.receiveShadow = true;
   head.position.y = 0.1;
   J.head.add(head);
-  const jaw = sphere(0.085, mats.skin, 16, 12);
-  jaw.scale.set(0.95, 0.75, 1.0);
-  jaw.position.set(0, 0.03, 0.03);
-  J.head.add(jaw);
   const nose = new THREE.Mesh(new THREE.ConeGeometry(0.014, 0.04, 6), mats.skin);
   nose.rotation.x = Math.PI / 2 + 0.3;
   nose.position.set(0, 0.085, 0.118);
@@ -186,8 +182,8 @@ export function buildRig(def) {
     J.head.add(brow);
   }
   // mouth
-  const mouth = box(0.035, 0.004, 0.005, new THREE.MeshStandardMaterial({ color: 0x5a2a25 }));
-  mouth.position.set(0, 0.045, 0.108);
+  const mouth = box(0.03, 0.0035, 0.006, new THREE.MeshStandardMaterial({ color: 0x6a3530 }));
+  mouth.position.set(0, 0.038, 0.104);
   J.head.add(mouth);
 
   // headband with metal plate
@@ -334,14 +330,89 @@ function mergeStatic(root) {
   }
 }
 
+/**
+ * Sculpted hair: a sphere shell whose vertices are pushed out along a set of
+ * spike directions, giving one continuous anime-style hair mass per style.
+ */
+function sculptHair(style) {
+  let geo = new THREE.IcosahedronGeometry(0.128, 5);
+  geo.deleteAttribute('normal');
+  geo.deleteAttribute('uv');
+  geo = BufferGeometryUtils.mergeVertices(geo);
+  const dirs = [];
+  const add = (x, y, z, len, sharp) => dirs.push({ d: new THREE.Vector3(x, y, z).normalize(), len, sharp });
+  if (style === 'spiky') {
+    for (let i = 0; i < 15; i++) {
+      const a = (i / 15) * Math.PI * 2;
+      add(Math.cos(a) * 0.9, 0.55 + (i % 3) * 0.3, Math.sin(a) * 0.7 - 0.55, rand(0.08, 0.13), rand(28, 40));
+    }
+    add(0, 1, -0.2, 0.1, 30);
+  } else if (style === 'swept') {
+    for (let i = 0; i < 11; i++) {
+      const x = (i / 10 - 0.5) * 1.4;
+      add(x, 0.45 + Math.abs(x) * 0.2, -1, rand(0.1, 0.15), rand(22, 32));
+    }
+    for (let i = 0; i < 5; i++) add((i / 4 - 0.5) * 1.2, 0.95, -0.3, 0.07, 26);
+  } else if (style === 'short') {
+    for (let i = 0; i < 26; i++) {
+      const a = rand(0, Math.PI * 2), y = rand(0.2, 1);
+      add(Math.cos(a), y, Math.sin(a) - 0.2, rand(0.02, 0.035), 40);
+    }
+  }
+  const p = geo.attributes.position;
+  const v = new THREE.Vector3(), n = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i);
+    n.copy(v).normalize();
+    let r = 0.128;
+    // keep the face and the underside inside the skull
+    const face = n.z > 0.2 && n.y < 0.42;
+    const under = n.y < -0.15 && !(style === 'ponytail' && n.z < -0.4);
+    if (face || under) r = 0.1;
+    else {
+      let f = 0;
+      for (const s of dirs) f = Math.max(f, Math.pow(Math.max(0, n.dot(s.d)), s.sharp) * s.len);
+      r += f;
+      if (style === 'ponytail' && n.z < -0.3 && n.y < 0.2) r += 0.012 * (1 - n.y); // hair hanging down the back
+    }
+    p.setXYZ(i, n.x * r, n.y * r, n.z * r);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function sculptHead(female) {
+  const geo = new THREE.SphereGeometry(0.118, 32, 24);
+  const p = geo.attributes.position;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i);
+    const y = v.y / 0.118;
+    let sx = 0.92, sz = 0.98;
+    if (y < 0) {
+      // taper the lower half into cheeks and a chin
+      const t = -y;
+      sx *= 1 - t * t * (female ? 0.38 : 0.3);
+      sz *= 1 - t * t * 0.12;
+      if (v.z > 0) v.z += t * t * 0.012;
+      v.y *= 1.12;
+    } else v.y *= 1.04;
+    // flatten the back of the head slightly and the sides at the temples
+    if (v.z < 0) sz *= 0.97;
+    v.x *= sx;
+    v.z *= sz;
+    p.setXYZ(i, v.x, v.y, v.z);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
 function buildHair(head, style, mat) {
-  // skull cap: upper hemisphere tilted back so the face stays visible
-  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.127, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.56), mat);
-  cap.castShadow = true;
-  cap.scale.set(0.96, 1.0, 1.04);
-  cap.position.set(0, 0.11, -0.012);
-  cap.rotation.x = -0.55;
-  head.add(cap);
+  const hair = new THREE.Mesh(sculptHair(style), mat);
+  hair.castShadow = true;
+  hair.position.set(0, 0.112, -0.008);
+  hair.scale.set(0.98, 1, 1.04);
+  head.add(hair);
   const spike = (len, r, pos, dir) => {
     const g = new THREE.ConeGeometry(r, len, 7);
     g.translate(0, len / 2, 0);
@@ -352,48 +423,28 @@ function buildHair(head, style, mat) {
     head.add(m);
     return m;
   };
-  const C = new THREE.Vector3(0, 0.14, -0.01);
   if (style === 'spiky') {
-    for (let i = 0; i < 16; i++) {
-      const a = (i / 16) * Math.PI * 2;
-      const up = 0.4 + (i % 3) * 0.25;
-      const dir = new THREE.Vector3(Math.cos(a), up, Math.sin(a) - 0.6);
-      const p = C.clone().add(new THREE.Vector3(Math.cos(a) * 0.07, 0.04, Math.sin(a) * 0.07 - 0.02));
-      spike(rand(0.13, 0.19), 0.04, p, dir);
-    }
     for (let i = 0; i < 5; i++) {
-      // bangs falling over headband
-      const x = (i - 2) * 0.035;
-      spike(0.09, 0.025, new THREE.Vector3(x, 0.2, 0.09), new THREE.Vector3(x * 2, -0.6, 1));
+      // bangs falling over the headband
+      const x = (i - 2) * 0.033;
+      spike(0.085, 0.024, new THREE.Vector3(x, 0.205, 0.085), new THREE.Vector3(x * 2, -0.75, 1));
     }
   } else if (style === 'swept') {
-    for (let i = 0; i < 12; i++) {
-      const x = (i / 11 - 0.5) * 0.2;
-      const dir = new THREE.Vector3(x * 1.5, 0.55 + Math.abs(x), -1);
-      spike(rand(0.18, 0.25), 0.045, new THREE.Vector3(x, 0.2 + rand(0, 0.03), 0.04), dir);
-    }
-    for (let i = 0; i < 3; i++) {
-      spike(0.13, 0.025, new THREE.Vector3(-0.05 + i * 0.03, 0.2, 0.1), new THREE.Vector3(0.3, -1, 0.5));
+    for (let i = 0; i < 2; i++) {
+      spike(0.12, 0.022, new THREE.Vector3(-0.045 + i * 0.03, 0.2, 0.095), new THREE.Vector3(0.3, -1, 0.45));
     }
   } else if (style === 'ponytail') {
-    cap.scale.set(1.0, 0.95, 1.05);
-    for (let i = 0; i < 7; i++) {
-      const x = (i - 3) * 0.03;
-      spike(0.11, 0.028, new THREE.Vector3(x, 0.21, 0.09), new THREE.Vector3(x * 1.5, -1, 0.35));
+    for (let i = 0; i < 6; i++) {
+      const x = (i - 2.5) * 0.03;
+      spike(0.1, 0.026, new THREE.Vector3(x, 0.21, 0.085), new THREE.Vector3(x * 1.5, -1, 0.35));
     }
     for (const s of [-1, 1]) {
       // side locks framing the face
-      spike(0.2, 0.03, new THREE.Vector3(s * 0.1, 0.18, 0.06), new THREE.Vector3(s * 0.1, -1, 0.05));
+      spike(0.2, 0.028, new THREE.Vector3(s * 0.102, 0.18, 0.055), new THREE.Vector3(s * 0.08, -1, 0.05));
     }
     const tie = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.012, 6, 12), new THREE.MeshStandardMaterial({ color: 0x7b3fc4 }));
-    tie.position.set(0, 0.2, -0.11);
+    tie.position.set(0, 0.2, -0.12);
     head.add(tie);
-  } else {
-    cap.scale.set(1.03, 0.85, 1.05);
-    for (let i = 0; i < 14; i++) {
-      const a = (i / 14) * Math.PI * 2;
-      spike(0.06, 0.035, C.clone().add(new THREE.Vector3(Math.cos(a) * 0.08, 0.06, Math.sin(a) * 0.08)), new THREE.Vector3(Math.cos(a), 1.2, Math.sin(a)));
-    }
   }
 }
 
