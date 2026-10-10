@@ -22,11 +22,17 @@ const GradeShader = {
     uFlash: { value: 0 },
     uSat: { value: 1.05 },
     uAberr: { value: 0 },
+    uImpact: { value: 0 },
+    uImpactRed: { value: 0 },
+    uSpeed: { value: 0 },
+    uTsuku: { value: 0 },
+    uTime: { value: 0 },
   },
   vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
   fragmentShader: /* glsl */ `
-    uniform sampler2D tDiffuse; uniform float uVignette, uDim, uFlash, uSat, uAberr;
+    uniform sampler2D tDiffuse; uniform float uVignette, uDim, uFlash, uSat, uAberr, uImpact, uImpactRed, uSpeed, uTsuku, uTime;
     varying vec2 vUv;
+    float hash1(float n) { return fract(sin(n) * 43758.5453); }
     void main(){
       vec2 uv = vUv; vec2 d = uv - 0.5;
       vec3 col;
@@ -41,7 +47,30 @@ const GradeShader = {
       float r = length(d * vec2(1.0, 0.75));
       col *= 1.0 - uDim * (0.45 + smoothstep(0.15, 0.7, r) * 0.5);
       col *= mix(1.0 - uVignette, 1.0, smoothstep(0.75, 0.2, r));
+      // Tsukuyomi: a crimson genjutsu world with ink-black shadows
+      if (uTsuku > 0.0) {
+        float tl = dot(col, vec3(0.2126, 0.7152, 0.0722));
+        vec3 tsu = mix(vec3(0.0), vec3(0.95, 0.06, 0.08), smoothstep(0.1, 0.65, tl));
+        tsu += vec3(1.0, 0.85, 0.8) * smoothstep(0.8, 1.6, tl) * 0.7;
+        col = mix(col, tsu, uTsuku);
+      }
+      // anime speed lines radiating from the screen edges
+      if (uSpeed > 0.0) {
+        float ang = atan(d.y, d.x);
+        float slot = floor(ang * 70.0);
+        float flick = floor(uTime * 24.0);
+        float on = step(0.82, hash1(slot * 7.13 + flick * 3.7));
+        float reach = 0.28 + hash1(slot + flick) * 0.25;
+        col = mix(col, vec3(1.0), on * smoothstep(reach, reach + 0.25, r) * uSpeed * 0.75);
+      }
       col += uFlash;
+      // impact frame: two-tone ink silhouette for a few frames on big hits
+      if (uImpact > 0.0) {
+        float il = dot(col, vec3(0.2126, 0.7152, 0.0722));
+        float ink = step(0.5, il);
+        vec3 paper = mix(vec3(1.0, 0.97, 0.92), vec3(0.95, 0.08, 0.06), uImpactRed);
+        col = mix(col, mix(paper, vec3(0.02), ink), uImpact);
+      }
       gl_FragColor = vec4(col, 1.0);
     }`,
 };
@@ -177,6 +206,18 @@ class Game {
   flashScreen(a) {
     this.flashA = Math.max(this.flashA, a);
   }
+  /** Anime impact frame (inverted ink silhouette) for big hits. */
+  impact(dur = 0.06, style = 'bw') {
+    if (this.mode === 'select') return;
+    this.impactT = Math.max(this.impactT || 0, dur);
+    this.impactRed = style === 'red' ? 1 : 0;
+  }
+  speedLines(dur = 0.5) {
+    this.speedT = Math.max(this.speedT || 0, dur);
+  }
+  setTsukuyomi(on) {
+    this.tsuku = on;
+  }
   schedule(delay, fn) {
     this.simTimers.push({ t: delay, fn });
   }
@@ -218,7 +259,7 @@ class Game {
     });
   }
 
-  spawnSpike(pos, scale = 1) {
+  spawnSpike(pos, scale = 1, kind = 'rock') {
     const geo = new THREE.ConeGeometry(0.55 * scale, 2.4 * scale, 7, 3);
     const p = geo.attributes.position;
     for (let i = 0; i < p.count; i++) {
@@ -229,13 +270,19 @@ class Game {
     }
     geo.computeVertexNormals();
     geo.translate(0, 1.2 * scale, 0);
-    const m = new THREE.Mesh(geo, this.spikeMat || (this.spikeMat = new THREE.MeshStandardMaterial({ color: 0x7a6a58, roughness: 0.95, flatShading: true })));
+    if (!this.spikeMat) {
+      this.spikeMat = new THREE.MeshStandardMaterial({ color: 0x7a6a58, roughness: 0.95, flatShading: true });
+      this.sandSpikeMat = new THREE.MeshToonMaterial({ color: 0xcaa56c });
+    }
+    const m = new THREE.Mesh(geo, kind === 'sand' ? this.sandSpikeMat : this.spikeMat);
     m.castShadow = true;
     m.position.set(pos.x, -2.4 * scale, pos.z);
     m.rotation.set(rand(-0.25, 0.25), rand(0, 6), rand(-0.25, 0.25));
     this.transient.add(m);
-    this.fx.dust(new THREE.Vector3(pos.x, 0, pos.z), 6, 1);
-    this.fx.rocks(new THREE.Vector3(pos.x, 0.3, pos.z), 3, 5);
+    if (kind !== 'sand') {
+      this.fx.dust(new THREE.Vector3(pos.x, 0, pos.z), 6, 1);
+      this.fx.rocks(new THREE.Vector3(pos.x, 0.3, pos.z), 3, 5);
+    }
     let t = 0;
     this.addEffect((dt) => {
       t += dt;
@@ -289,6 +336,26 @@ class Game {
   }
   onSubstitute(f) {
     if (this.mode !== 'demo') this.ui.toast(f.index, 'THẾ THÂN!', '#8ee38a');
+  }
+  onJutsu(f, kind) {
+    if (this.mode === 'demo') return;
+    this.ui.toast(f.index, f.def[kind].name.toUpperCase(), '#' + new THREE.Color(f.def.colors.chakra).getHexString());
+  }
+  onAwakenStart(f) {
+    this.speedLines(1);
+    if (this.mode === 'demo') return;
+    this.ui.jutsuBanner(f, true, 'awaken');
+    this.after(1.6, () => this.ui.jutsuBanner(null, false));
+  }
+  onAwaken(f) {
+    if (this.mode !== 'demo') this.ui.toast(f.index, 'KHAI NHÃN!', '#ffd34a');
+  }
+  onCannotAwaken(f) {
+    if (this.mode === 'demo' || !this.controllers[f.index]?.human) return;
+    if (this.realTime - (this.lastDenied || 0) < 0.5) return;
+    this.lastDenied = this.realTime;
+    this.ui.toast(f.index, f.awakenUsed ? 'ĐÃ KHAI NHÃN HIỆP NÀY' : 'KHAI NHÃN KHI MÁU < 45%', '#ff8a6a');
+    this.audio.play('denied');
   }
   onNotEnoughChakra(f) {
     if (this.mode === 'demo' || !this.controllers[f.index]?.human) return;
@@ -375,6 +442,9 @@ class Game {
     this.timeScale = 1;
     this.hitstopT = 0;
     this.camShot = null;
+    this.tsuku = false;
+    this.impactT = 0;
+    this.speedT = 0;
     this.ui.clearBanner();
     this.ui.letterbox(false);
     this.ui.jutsuBanner(null, false);
@@ -440,7 +510,7 @@ class Game {
 
   startArcade(p1) {
     const others = CHARACTERS.filter((c) => c !== p1).sort(() => Math.random() - 0.5);
-    this.arcade = { p1, ladder: others, diffs: ['easy', 'normal', 'hard'], stage: 0 };
+    this.arcade = { p1, ladder: others, diffs: ['easy', 'normal', 'normal', 'hard', 'hard'], stage: 0 };
     this.startArcadeStage();
   }
 
@@ -481,6 +551,7 @@ class Game {
     this.simTimers.length = 0;
     this.transient.clear();
     this.fx.clear();
+    this.tsuku = false;
     f1.reset(new THREE.Vector3(-5, 0, 0), Math.PI / 2);
     f2.reset(new THREE.Vector3(5, 0, 0), -Math.PI / 2);
     f1.setState('intro');
@@ -548,9 +619,9 @@ class Game {
         if (this.cfg.mode === 'arcade') {
           const a = this.arcade;
           const won = mw.index === 0;
-          if (won && a.stage >= 2) this.ui.result(mw, 'Bạn đã đánh bại cả ba ninja và chinh phục Thung Lũng Hoàng Hôn!', { title: 'CHINH PHỤC THỬ THÁCH', kanji: '覇' });
-          else if (won) this.ui.result(mw, `Ải ${a.stage + 1}/3 hoàn thành — đối thủ tiếp theo: ${a.ladder[a.stage + 1].name}`, { next: true });
-          else this.ui.result(mw, `Gục ngã ở ải ${a.stage + 1}/3 — đứng dậy và thử lại!`, { title: 'THẤT BẠI', kanji: '敗' });
+          if (won && a.stage >= a.ladder.length - 1) this.ui.result(mw, `Bạn đã đánh bại cả ${a.ladder.length} ninja và chinh phục Thung Lũng Hoàng Hôn!`, { title: 'CHINH PHỤC THỬ THÁCH', kanji: '覇' });
+          else if (won) this.ui.result(mw, `Ải ${a.stage + 1}/${a.ladder.length} hoàn thành — đối thủ tiếp theo: ${a.ladder[a.stage + 1].name}`, { next: true });
+          else this.ui.result(mw, `Gục ngã ở ải ${a.stage + 1}/${a.ladder.length} — đứng dậy và thử lại!`, { title: 'THẤT BẠI', kanji: '敗' });
         } else {
           const label = this.cfg.mode === 'cpu' ? (mw.index === 0 ? 'Bạn đã đánh bại máy!' : 'Máy đã chiến thắng — thử lại nhé!') : `Người chơi ${mw.index + 1} thắng ${this.wins[mw.index]} - ${this.wins[1 - mw.index]}`;
           this.ui.result(mw, label);
@@ -658,6 +729,14 @@ class Game {
     this.aberr = Math.max(0, this.aberr - rdt * 0.05);
     this.grade.uniforms.uFlash.value = this.flashA * 0.8;
     this.grade.uniforms.uAberr.value = this.aberr;
+    const gu = this.grade.uniforms;
+    gu.uTime.value = this.realTime;
+    if (this.impactT > 0) this.impactT -= rdt;
+    gu.uImpact.value = this.impactT > 0 && !this.paused ? 1 : 0;
+    gu.uImpactRed.value = this.impactRed || 0;
+    if (this.speedT > 0) this.speedT -= rdt;
+    gu.uSpeed.value = damp(gu.uSpeed.value, (this.cine || this.speedT > 0) && !this.paused ? 1 : 0, 10, rdt);
+    gu.uTsuku.value = damp(gu.uTsuku.value, this.tsuku ? 1 : 0, 8, rdt);
     this.grade.uniforms.uDim.value = damp(this.grade.uniforms.uDim.value, this.cine ? 0.55 : 0, 6, rdt);
     this.grade.uniforms.uSat.value = damp(this.grade.uniforms.uSat.value, this.timeScale < 0.5 ? 0.5 : 1.05, 5, rdt);
     if (render) this.composer.render();
@@ -768,7 +847,8 @@ class Game {
       lambda = s.lambda || 4;
       if (s.orbit) {
         const o = s.orbit;
-        const ang = o.a0 + (this.cine ? this.cine.t : 0) * o.speed;
+        if (s.t0 === undefined) s.t0 = this.realTime;
+        const ang = o.a0 + (this.cine ? this.cine.t : this.realTime - s.t0) * o.speed;
         desiredPos.set(o.center.x + Math.sin(ang) * o.r, o.h, o.center.z + Math.cos(ang) * o.r);
         desiredLook.copy(s.look);
       } else if (s.follow) {

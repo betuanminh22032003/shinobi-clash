@@ -350,6 +350,10 @@ const SOUNDS = {
     a.noiseHit({ f0: 220, f1: 60, dur: 1.4, vol: 0.9, attack: 0.1, verb: 0.4 });
     a.tone({ f0: 45, f1: 30, dur: 1.2, vol: 0.6, attack: 0.1 });
   },
+  sand: (a) => {
+    a.noiseHit({ type: 'bandpass', f0: 600, f1: 2400, q: 0.8, dur: 0.9, vol: 0.45, attack: 0.15, verb: 0.3 });
+    a.noiseHit({ f0: 300, f1: 90, dur: 0.6, vol: 0.4, attack: 0.05 });
+  },
   rockHit: (a) => {
     SOUNDS.hitHeavy(a);
     a.noiseHit({ f0: 1200, f1: 150, dur: 0.4, vol: 0.6, verb: 0.3 });

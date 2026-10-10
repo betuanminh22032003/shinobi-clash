@@ -5,6 +5,10 @@ import { Trail } from './effects.js';
 import { clamp, damp, dampAngle, angleDiff, rand } from './utils.js';
 import { ARENA_RADIUS } from './arena.js';
 import { JUTSU } from './jutsu.js';
+import { createAura, awakenJutsu } from './aura.js';
+
+const AWAKEN_HP = 0.45;
+const AWAKEN_TIME = 18;
 
 const GRAVITY = 32;
 const _v = new THREE.Vector3();
@@ -18,6 +22,15 @@ export class Fighter {
     this.index = index;
     this.rig = buildRig(def);
     game.scene.add(this.rig.root);
+    // shadow clones are pre-built so the jutsu doesn't hitch the first time it's used
+    if (Object.values(def.jutsu).includes('kageBunshin')) {
+      this.cloneRigs = [buildRig(def), buildRig(def)];
+      for (const r of this.cloneRigs) {
+        r.root.visible = false;
+        game.scene.add(r.root);
+      }
+    }
+    this.baseEye = new THREE.Color(def.colors.eye);
     this.color = new THREE.Color(def.colors.chakra);
 
     this.maxHp = Math.round(150 * def.stats.hp);
@@ -41,6 +54,10 @@ export class Fighter {
 
   reset(pos, yaw) {
     if (this.jutsu && this.jutsu.cancel) this.jutsu.cancel();
+    this.endAwaken(true);
+    this.awakenUsed = false;
+    this.held = false;
+    if (this.cloneRigs) this.cloneRigs.forEach((r) => (r.root.visible = false));
     this.pos.copy(pos);
     this.vel.set(0, 0, 0);
     this.yaw = yaw;
@@ -61,7 +78,7 @@ export class Fighter {
     this.airAttackUsed = false;
     this.combo = 0;
     this.comboTimer = 0;
-    this.cooldowns = { throw: 0, dash: 0, special: 0 };
+    this.cooldowns = { throw: 0, dash: 0, special: 0, special2: 0 };
     this.jutsu = null;
     this.flash = 0;
     this.hitFlinchAlt = false;
@@ -78,7 +95,9 @@ export class Fighter {
   dispose() {
     if (this.jutsu && this.jutsu.cancel) this.jutsu.cancel();
     this.jutsu = null;
+    this.endAwaken(true);
     disposeRig(this.rig, this.game.scene);
+    if (this.cloneRigs) this.cloneRigs.forEach((r) => disposeRig(r, this.game.scene));
     for (const t of Object.values(this.trails)) t.ribbon.dispose();
   }
 
@@ -122,6 +141,51 @@ export class Fighter {
     this.stateT = 0;
   }
 
+  // ---- awakening ----
+  canAwaken() {
+    return !this.awakenUsed && this.awakened <= 0 && this.hp > 0 && this.hp <= this.maxHp * AWAKEN_HP && !!this.def.awaken;
+  }
+  startAwaken() {
+    this.awakenUsed = true;
+    this.faceOpponent();
+    this.vel.set(0, this.vel.y, 0);
+    this.jutsu = awakenJutsu(this, this.game);
+    this.jutsuKind = 'awaken';
+    this.setState('jutsu');
+    this.game.onAwakenStart(this);
+  }
+  /** Called by the transformation jutsu at the moment of the burst. */
+  beginAwaken() {
+    this.awakened = AWAKEN_TIME;
+    this.aura = createAura(this, this.game);
+    this.speedMul = 1.15;
+    this.subs = Math.min(4, this.subs + 1);
+    this.rig.mats.eye.emissive.set(this.def.awaken.eye);
+    this.resetRim();
+    this.game.onAwaken(this);
+  }
+  endAwaken(silent = false) {
+    if (this.aura) this.aura.dispose();
+    this.aura = null;
+    if (!this.awakened && silent) {
+      this.awakened = 0;
+      this.resetRim();
+      return;
+    }
+    this.awakened = 0;
+    this.speedMul = 1;
+    this.rig.mats.eye.emissive.copy(this.baseEye);
+    this.resetRim();
+    if (!silent) this.game.fx.smokePuff(this.pos, 16, 0.7, 0xbbbbbb);
+  }
+  resetRim() {
+    const rim = this.rig.rim.value;
+    if (this.awakened > 0) {
+      const c = new THREE.Color(this.def.awaken.color);
+      rim.set(c.r * 1.6, c.g * 1.6, c.b * 1.6, 1.2);
+    } else rim.set(1, 0.85, 0.7, 0.35);
+  }
+
   // -------------------------------------------------------------------------
   update(dt, input) {
     this.stateT += dt;
@@ -138,11 +202,24 @@ export class Fighter {
       }
     }
     this.dispHp = damp(this.dispHp, this.hp, 3, dt);
+    if (this.awakened > 0) {
+      this.awakened -= dt;
+      this.chakra = Math.min(100, this.chakra + 5 * dt);
+      if (this.aura) this.aura.update(dt);
+      if (this.awakened <= 0 || this.state === 'ko') this.endAwaken();
+    }
+
+    // held by an opponent's grab jutsu: the jutsu drives our position, we just animate
+    if (this.held) {
+      this.vel.set(0, 0, 0);
+      this.animate(dt);
+      return;
+    }
 
     if (input.attack) this.queued = { k: 'attack', t: 0.25 };
     // short buffer so a jutsu pressed slightly early still cancels the current hit
-    if (input.special || input.shuriken || input.ultimate) {
-      this.jutsuQ = { special: input.special, shuriken: input.shuriken, ultimate: input.ultimate, t: 0.25 };
+    if (input.special || input.special2 || input.shuriken || input.ultimate) {
+      this.jutsuQ = { special: input.special, special2: input.special2, shuriken: input.shuriken, ultimate: input.ultimate, t: 0.25 };
     } else if (this.jutsuQ && (this.jutsuQ.t -= dt) <= 0) this.jutsuQ = null;
     if (this.queued) {
       this.queued.t -= dt;
@@ -204,6 +281,13 @@ export class Fighter {
       this.startDash(input);
       return true;
     }
+    if (input.awaken) {
+      if (this.canAwaken()) {
+        this.startAwaken();
+        return true;
+      }
+      g.onCannotAwaken(this);
+    }
     if (input.ultimate && this.chakra >= 100) {
       this.startJutsu('ultimate');
       return true;
@@ -212,7 +296,11 @@ export class Fighter {
       this.startJutsu('special');
       return true;
     }
-    if (input.ultimate || input.special) g.onNotEnoughChakra(this);
+    if (input.special2 && this.chakra >= 30 && this.cooldowns.special2 <= 0) {
+      this.startJutsu('special2');
+      return true;
+    }
+    if (input.ultimate || input.special || input.special2) g.onNotEnoughChakra(this);
     if (this.queued && this.queued.k === 'attack') {
       this.queued = null;
       this.startMove(COMBO_START);
@@ -347,7 +435,8 @@ export class Fighter {
       };
       const q = this.jutsuQ || {};
       if ((input.ultimate || q.ultimate) && this.chakra >= 100) return cancelInto(() => this.startJutsu('ultimate'), 0.5);
-      if ((input.special || q.special) && this.chakra >= 30 && this.cooldowns.special <= 0) return cancelInto(() => this.startJutsu('special'), this.def.element === 'earth' ? 0.75 : 0.6);
+      if ((input.special || q.special) && this.chakra >= 30 && this.cooldowns.special <= 0) return cancelInto(() => this.startJutsu('special'), 0.75);
+      if ((input.special2 || q.special2) && this.chakra >= 30 && this.cooldowns.special2 <= 0) return cancelInto(() => this.startJutsu('special2'), 0.75);
       if ((input.shuriken || q.shuriken) && this.cooldowns.throw <= 0) {
         return cancelInto(() => {
           this.cooldowns.throw = 0.7;
@@ -389,7 +478,7 @@ export class Fighter {
     if (dir.lengthSq() < 0.01) dir.copy(this.forwardVec());
     const res = o.receiveHit({
       attacker: this,
-      dmg: h.dmg * this.power,
+      dmg: h.dmg * this.power * (this.awakened > 0 ? 1.2 : 1),
       kb: h.kb,
       launch: h.launch || 0,
       stun: h.stun,
@@ -399,6 +488,7 @@ export class Fighter {
       unblockable: h.unblockable,
       jutsu: h.jutsu,
       color: h.color,
+      stop: h.stop,
     });
     if (res === 'hit') {
       this.chakra = Math.min(100, this.chakra + (h.jutsu ? 2 : 5));
@@ -439,13 +529,16 @@ export class Fighter {
     this.lastAttacker = h.attacker;
     const heavy = h.kb > 6 || h.launch > 0;
     const color = h.color || new THREE.Color(1, 0.85, 0.6);
+    if (this.hp <= 0) g.impact(0.12);
+    else if (h.jutsu && heavy) g.impact(0.04);
     g.fx.hitSpark(h.at, color, heavy ? 1.6 : 1);
     g.audio.play(h.sfx || (heavy ? 'hitHeavy' : 'hit'));
-    g.hitstop(heavy ? 0.11 : 0.06);
+    g.hitstop(h.stop ?? (heavy ? 0.11 : 0.06));
     g.shake(heavy ? 0.35 : 0.13);
     g.onHit(h.attacker, this, h);
 
     if (this.hp <= 0) {
+      this.held = false;
       this.state = 'ko';
       this.stateT = 0;
       this.vel.copy(h.dir).multiplyScalar(Math.max(8, h.kb));
@@ -588,9 +681,10 @@ export class Fighter {
       g.audio.stopCharge(this.index);
       this.setState('idle');
       if (this.chakra >= 100) g.audio.play('ready');
+      this.handleActions(input);
       return;
     }
-    if (input.block || input.dash || input.jump || input.attack) {
+    if (input.block || input.dash || input.jump || input.attack || input.special || input.special2 || input.ultimate || input.awaken) {
       g.audio.stopCharge(this.index);
       this.setState('idle');
       this.handleActions(input);
@@ -637,14 +731,15 @@ export class Fighter {
     const g = this.game;
     const cost = kind === 'ultimate' ? 100 : 30;
     this.chakra -= cost;
-    if (kind === 'special') this.cooldowns.special = 1.2;
+    if (kind !== 'ultimate') this.cooldowns[kind] = 1.2;
     this.faceOpponent();
     this.vel.set(0, this.vel.y, 0);
-    const fn = JUTSU[this.def.element][kind];
+    const fn = JUTSU[this.def.jutsu[kind]];
     this.jutsu = fn(this, g);
     this.jutsuKind = kind;
     this.setState('jutsu');
     if (kind === 'ultimate') g.startUltimateCinematic(this);
+    else g.onJutsu(this, kind);
   }
 
   updateJutsu(dt, input) {
@@ -756,7 +851,7 @@ export class Fighter {
     this.rig.mats.jacket.emissive.setRGB(em, em, em);
     this.rig.mats.skin.emissive.setRGB(em * 0.8 + 0.035, em * 0.8 + 0.025, em * 0.8 + 0.02);
     const eye = this.rig.mats.eye;
-    eye.emissiveIntensity = damp(eye.emissiveIntensity, st === 'jutsu' || st === 'charge' ? 5 : 0.6, 6, dt);
+    eye.emissiveIntensity = damp(eye.emissiveIntensity, st === 'jutsu' || st === 'charge' ? 5 : this.awakened > 0 ? 3 : 0.6, 6, dt);
     // invulnerability blink after getting up / substitution
     this.rig.root.visible = !(this.invuln > 0 && st === 'idle' && Math.floor(time * 30) % 2 === 0 && this.invuln < 0.3);
   }

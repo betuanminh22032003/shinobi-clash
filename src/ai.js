@@ -101,7 +101,7 @@ export class AIController {
       // continue combo
       if (Math.random() < c.combo * dt * 14 && dist < 2.6) out.attack = true;
       // occasionally cut the string into a jutsu for a real combo
-      if (o.state === 'hit' && f.chakra >= 30 && Math.random() < c.jutsu * dt * 2.5) out.special = true;
+      if (o.state === 'hit' && f.chakra >= 30 && Math.random() < c.jutsu * dt * 2.5) out[Math.random() < 0.5 ? 'special' : 'special2'] = true;
       return out;
     }
 
@@ -112,12 +112,16 @@ export class AIController {
     this.think = c.react * rand(0.6, 1.4);
 
     // decide
+    if (f.canAwaken() && Math.random() < c.jutsu * 0.7) {
+      out.awaken = true;
+      return out;
+    }
     if (f.chakra >= 100 && dist < 12 && o.state !== 'down' && Math.random() < c.jutsu) {
       out.ultimate = true;
       return out;
     }
     if (f.chakra >= 30 && dist > 3 && dist < 11 && Math.random() < c.jutsu * 0.35) {
-      out.special = true;
+      out[Math.random() < 0.5 ? 'special' : 'special2'] = true;
       return out;
     }
     if (f.chakra < 35 && dist > 9 && Math.random() < 0.3) {

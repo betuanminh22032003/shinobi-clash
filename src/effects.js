@@ -78,7 +78,8 @@ export class Particles {
   }
 
   spawn(o) {
-    if (this.count >= this.max) return;
+    // a NaN colour would be smeared over the whole frame by the bloom pass
+    if (this.count >= this.max || !(o.color.r >= 0)) return;
     const i = this.count++;
     const i3 = i * 3;
     this.pos[i3] = o.x; this.pos[i3 + 1] = o.y; this.pos[i3 + 2] = o.z;

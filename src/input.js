@@ -21,13 +21,13 @@ export const Keys = {
 export const LAYOUTS = {
   p1: {
     up: ['KeyW'], down: ['KeyS'], left: ['KeyA'], right: ['KeyD'],
-    jump: ['Space'], attack: ['KeyJ'], shuriken: ['KeyK'], special: ['KeyL'],
-    charge: ['KeyU'], block: ['KeyI'], ultimate: ['KeyO'], dash: ['ShiftLeft', 'ShiftRight'],
+    jump: ['Space'], attack: ['KeyJ'], shuriken: ['KeyK'], special: ['KeyL'], special2: ['Semicolon'],
+    charge: ['KeyU'], block: ['KeyI'], ultimate: ['KeyO'], awaken: ['KeyP'], dash: ['ShiftLeft', 'ShiftRight'],
   },
   p2: {
     up: ['ArrowUp'], down: ['ArrowDown'], left: ['ArrowLeft'], right: ['ArrowRight'],
-    jump: ['Numpad0'], attack: ['Numpad1'], shuriken: ['Numpad2'], special: ['Numpad3'],
-    charge: ['Numpad4'], block: ['Numpad5'], ultimate: ['Numpad6'], dash: ['NumpadDecimal', 'NumpadEnter'],
+    jump: ['Numpad0'], attack: ['Numpad1'], shuriken: ['Numpad2'], special: ['Numpad3'], special2: ['Numpad9'],
+    charge: ['Numpad4'], block: ['Numpad5'], ultimate: ['Numpad6'], awaken: ['Numpad7'], dash: ['NumpadDecimal', 'NumpadEnter'],
   },
 };
 
@@ -41,7 +41,7 @@ LAYOUTS.solo = merge(LAYOUTS.p1, LAYOUTS.p2);
 const _f = new THREE.Vector3(), _r = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
 
 export function emptyIntent() {
-  return { mx: 0, mz: 0, jump: false, attack: false, shuriken: false, special: false, ultimate: false, dash: false, block: false, charge: false };
+  return { mx: 0, mz: 0, jump: false, attack: false, shuriken: false, special: false, special2: false, ultimate: false, awaken: false, dash: false, block: false, charge: false };
 }
 
 /** Converts a 2D stick (x right, y forward) into a world-space direction relative to the camera. */
@@ -74,7 +74,9 @@ export class HumanController {
     out.attack = tap('attack');
     out.shuriken = tap('shuriken');
     out.special = tap('special');
+    out.special2 = tap('special2');
     out.ultimate = tap('ultimate');
+    out.awaken = tap('awaken');
     out.dash = tap('dash');
     out.block = held('block');
     out.charge = held('charge');
@@ -92,11 +94,15 @@ export class HumanController {
       out.jump ||= edge(0);
       out.attack ||= edge(2);
       out.shuriken ||= edge(1);
-      out.special ||= edge(3);
+      // Y = jutsu 1, RS click (or Y while holding RT) = jutsu 2, LS click = awakening
+      if (edge(3) && b[7]) out.special2 = true;
+      else out.special ||= edge(3);
+      out.special2 ||= edge(11);
+      out.awaken ||= edge(10);
       out.dash ||= edge(5);
       out.ultimate ||= edge(6);
       out.block ||= !!b[4];
-      out.charge ||= !!b[7];
+      out.charge ||= !!b[7] && !b[3];
       if (b[12]) y = 1; if (b[13]) y = -1; if (b[14]) x = -1; if (b[15]) x = 1;
       this.prevButtons = b;
     }

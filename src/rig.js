@@ -1,10 +1,66 @@
 import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { makeClothNormal, rand } from './utils.js';
+import { rand } from './utils.js';
 
 export const JOINTS = ['hips', 'spine', 'chest', 'neck', 'head', 'lArm', 'lFore', 'lHand', 'rArm', 'rFore', 'rHand', 'lLeg', 'lShin', 'lFoot', 'rLeg', 'rShin', 'rFoot'];
 
-let clothNormal = null;
+let gradientMap = null;
+let outlineMat = null;
+
+/** 4-step ramp for anime cel shading. */
+function toonGradient() {
+  const tex = new THREE.DataTexture(new Uint8Array([115, 175, 230, 255]), 4, 1, THREE.RedFormat);
+  tex.minFilter = tex.magFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/** Inverted-hull ink outline, roughly constant thickness in screen pixels. */
+function getOutlineMat() {
+  if (outlineMat) return outlineMat;
+  outlineMat = new THREE.ShaderMaterial({
+    uniforms: { uColor: { value: new THREE.Color(0x0a0608) } },
+    vertexShader: /* glsl */ `
+      void main() {
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vec3 n = normalize(normalMatrix * normal);
+        float thick = clamp(-mv.z * 0.0017, 0.0045, 0.022);
+        mv.xyz += n * thick;
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: /* glsl */ `uniform vec3 uColor; void main(){ gl_FragColor = vec4(uColor, 1.0); }`,
+    side: THREE.BackSide,
+  });
+  return outlineMat;
+}
+
+function addOutline(mesh) {
+  const o = new THREE.Mesh(mesh.geometry, getOutlineMat());
+  o.castShadow = o.receiveShadow = false;
+  o.userData.outline = true;
+  mesh.add(o);
+}
+
+/**
+ * Cel-shaded material with a fresnel rim term. All of a rig's materials share one
+ * rim uniform so awakening can light the whole silhouette in its aura colour.
+ */
+function toon(color, rim, extra = {}) {
+  const m = new THREE.MeshToonMaterial({ color, gradientMap, ...extra });
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uRim = rim;
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform vec4 uRim;')
+      .replace(
+        '#include <opaque_fragment>',
+        `float rimK = pow(1.0 - saturate(dot(normalize(normal), normalize(vViewPosition))), 3.0);
+        outgoingLight += uRim.rgb * rimK * uRim.a;
+        #include <opaque_fragment>`
+      );
+  };
+  return m;
+}
 
 function capsule(r, len, mat, seg = 10) {
   const m = new THREE.Mesh(new THREE.CapsuleGeometry(r, len, 6, seg), mat);
@@ -36,26 +92,29 @@ function joint(parent, x, y, z) {
  * Returns joints (Object3D per pose channel) plus helpers.
  */
 export function buildRig(def) {
-  if (!clothNormal) clothNormal = makeClothNormal(128);
+  if (!gradientMap) gradientMap = toonGradient();
   const c = def.colors;
   const b = def.build;
-  const female = def.hair === 'ponytail';
+  const female = !!def.female;
+  const rim = { value: new THREE.Vector4(1.0, 0.85, 0.7, 0.35) };
 
   const mats = {
-    jacket: new THREE.MeshStandardMaterial({ color: c.jacket, roughness: 0.82, normalMap: clothNormal, normalScale: new THREE.Vector2(0.5, 0.5) }),
-    accent: new THREE.MeshStandardMaterial({ color: c.accent, roughness: 0.7, normalMap: clothNormal, normalScale: new THREE.Vector2(0.4, 0.4) }),
-    pants: new THREE.MeshStandardMaterial({ color: c.pants, roughness: 0.9, normalMap: clothNormal, normalScale: new THREE.Vector2(0.5, 0.5) }),
-    skin: new THREE.MeshPhysicalMaterial({ color: c.skin, roughness: 0.55, sheen: 0.4, sheenColor: new THREE.Color(0xff9c80), sheenRoughness: 0.6, emissive: new THREE.Color(c.skin).multiplyScalar(0.04) }),
-    hair: new THREE.MeshStandardMaterial({ color: c.hair, roughness: 0.45, metalness: 0.05 }),
-    wrap: new THREE.MeshStandardMaterial({ color: 0xbdb5a5, roughness: 0.95, normalMap: clothNormal }),
-    metal: new THREE.MeshStandardMaterial({ color: 0xb9bcc1, metalness: 0.9, roughness: 0.38, envMapIntensity: 0.6 }),
-    band: new THREE.MeshStandardMaterial({ color: 0x1a1d2a, roughness: 0.8, normalMap: clothNormal }),
-    sandal: new THREE.MeshStandardMaterial({ color: 0x2a2a30, roughness: 0.7 }),
-    white: new THREE.MeshStandardMaterial({ color: 0xf5f3f0, roughness: 0.3 }),
+    jacket: toon(c.jacket, rim),
+    accent: toon(c.accent, rim),
+    pants: toon(c.pants, rim),
+    skin: toon(c.skin, rim, { emissive: new THREE.Color(c.skin).multiplyScalar(0.06) }),
+    hair: toon(c.hair, rim),
+    wrap: toon(def.legWarmers ?? 0xbdb5a5, rim),
+    metal: toon(0xd5d8de, rim),
+    band: toon(0x1a1d2a, rim),
+    sandal: toon(0x2a2a36, rim),
+    white: new THREE.MeshBasicMaterial({ color: 0xf5f3f0 }),
     eye: new THREE.MeshStandardMaterial({ color: 0x111111, emissive: new THREE.Color(c.eye), emissiveIntensity: 0.6, roughness: 0.2 }),
-    scarf: new THREE.MeshStandardMaterial({ color: c.scarf, roughness: 0.75, side: THREE.DoubleSide, normalMap: clothNormal, normalScale: new THREE.Vector2(0.4, 0.4) }),
-    brow: new THREE.MeshStandardMaterial({ color: c.hair, roughness: 0.8 }),
+    scarf: toon(c.scarf, rim, { side: THREE.DoubleSide }),
+    brow: toon(c.hair, rim),
+    ink: new THREE.MeshBasicMaterial({ color: 0x2a1a18 }),
   };
+  const armWrap = def.legWarmers ? toon(0xbdb5a5, rim) : mats.wrap;
 
   const root = new THREE.Group();
   const tilt = joint(root, 0, 0, 0);
@@ -182,11 +241,13 @@ export function buildRig(def) {
     J.head.add(brow);
   }
   // mouth
-  const mouth = box(0.03, 0.0035, 0.006, new THREE.MeshStandardMaterial({ color: 0x6a3530 }));
+  const mouth = box(0.03, 0.0035, 0.006, mats.ink);
   mouth.position.set(0, 0.038, 0.104);
   J.head.add(mouth);
 
   // headband with metal plate
+  const tails = [];
+  if (def.headband !== false) {
   const band = new THREE.Mesh(new THREE.CylinderGeometry(0.118, 0.118, 0.035, 28, 1, true), mats.band);
   band.scale.set(0.95, 1, 1.02);
   band.position.y = 0.155;
@@ -201,7 +262,6 @@ export function buildRig(def) {
   sym.rotation.x = -0.12;
   J.head.add(sym);
   // headband tails
-  const tails = [];
   for (const s of [-1, 1]) {
     const t = box(0.03, 0.17, 0.006, mats.band);
     t.geometry.translate(0, -0.085, 0);
@@ -210,8 +270,11 @@ export function buildRig(def) {
     J.head.add(t);
     tails.push(t);
   }
+  }
 
-  buildHair(J.head, def.hair, mats.hair);
+  buildHair(J.head, def, mats);
+  buildFaceMarks(J.head, def, mats);
+  buildOutfit(J, def, mats, b);
 
   // ---- arms ----
   for (const side of ['l', 'r']) {
@@ -225,7 +288,7 @@ export function buildRig(def) {
     const forearm = capsule(0.052 * (0.85 + b * 0.15), 0.17, mats.skin);
     forearm.position.y = -0.13;
     fore.add(forearm);
-    const wrap = new THREE.Mesh(new THREE.CylinderGeometry(0.057, 0.053, 0.12, 12), mats.wrap);
+    const wrap = new THREE.Mesh(new THREE.CylinderGeometry(0.057, 0.053, 0.12, 12), armWrap);
     wrap.position.y = -0.18;
     wrap.castShadow = true;
     fore.add(wrap);
@@ -256,8 +319,8 @@ export function buildRig(def) {
     const calf = capsule(0.066 * b, 0.27, mats.pants);
     calf.position.y = -0.19;
     shin.add(calf);
-    const wrap = new THREE.Mesh(new THREE.CylinderGeometry(0.071 * b, 0.067 * b, 0.2, 14), mats.wrap);
-    wrap.position.y = -0.3;
+    const wrap = new THREE.Mesh(new THREE.CylinderGeometry(0.075 * b, 0.07 * b, def.legWarmers ? 0.3 : 0.2, 14), mats.wrap);
+    wrap.position.y = def.legWarmers ? -0.26 : -0.3;
     wrap.castShadow = true;
     shin.add(wrap);
     const foot = (J[side + 'Foot'] = joint(shin, 0, -0.43, 0));
@@ -274,13 +337,16 @@ export function buildRig(def) {
   const chains = [];
   const scarfSegs = [];
   const scarfGeo = new THREE.BoxGeometry(0.16, 0.012, 1);
-  for (let i = 0; i < 7; i++) {
-    const m = new THREE.Mesh(scarfGeo, mats.scarf);
-    m.castShadow = true;
-    scarfSegs.push(m);
+  if (def.scarf !== false) {
+    for (let i = 0; i < 7; i++) {
+      const m = new THREE.Mesh(scarfGeo, mats.scarf);
+      m.castShadow = true;
+      addOutline(m);
+      scarfSegs.push(m);
+    }
+    const scarfAnchor = joint(J.chest, 0, 0.27, -0.1);
+    chains.push({ anchor: scarfAnchor, meshes: scarfSegs, segLen: 0.13, nodes: null, width: 1, gravity: 3, wind: 4 });
   }
-  const scarfAnchor = joint(J.chest, 0, 0.27, -0.1);
-  chains.push({ anchor: scarfAnchor, meshes: scarfSegs, segLen: 0.13, nodes: null, width: 1, gravity: 3, wind: 4 });
 
   if (def.hair === 'ponytail') {
     const ptGeo = new THREE.CylinderGeometry(0.035, 0.02, 1, 8);
@@ -289,14 +355,18 @@ export function buildRig(def) {
     for (let i = 0; i < 5; i++) {
       const m = new THREE.Mesh(ptGeo, mats.hair);
       m.castShadow = true;
+      addOutline(m);
       segs.push(m);
     }
-    const anchor = joint(J.head, 0, 0.2, -0.1);
+    const anchor = joint(J.head, 0, 0.12, -0.12);
     chains.push({ anchor, meshes: segs, segLen: 0.11, nodes: null, gravity: 7, wind: 1 });
   }
 
   mergeStatic(root);
-  return { root, tilt, J, mats, chains, tails };
+  root.traverse((o) => {
+    if (o.isMesh && !o.userData.outline && o.material !== mats.eye && o.material !== mats.white && o.material !== mats.ink) addOutline(o);
+  });
+  return { root, tilt, J, mats, chains, tails, rim };
 }
 
 /**
@@ -356,7 +426,19 @@ function sculptHair(style) {
   } else if (style === 'short') {
     for (let i = 0; i < 26; i++) {
       const a = rand(0, Math.PI * 2), y = rand(0.2, 1);
-      add(Math.cos(a), y, Math.sin(a) - 0.2, rand(0.02, 0.035), 40);
+      add(Math.cos(a), y, Math.sin(a) - 0.2, rand(0.03, 0.05), 34);
+    }
+  } else if (style === 'wild') {
+    // huge untamed mane sweeping back and down
+    for (let i = 0; i < 22; i++) {
+      const a = (i / 22) * Math.PI * 2;
+      add(Math.cos(a) * 1.1, rand(-0.2, 0.9), Math.sin(a) * 0.6 - 0.9, rand(0.12, 0.2), rand(16, 24));
+    }
+    add(0, 1, -0.4, 0.12, 20);
+  } else if (style === 'bowl') {
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      add(Math.cos(a), 0.6, Math.sin(a), 0.012, 4);
     }
   }
   const p = geo.attributes.position;
@@ -366,14 +448,16 @@ function sculptHair(style) {
     n.copy(v).normalize();
     let r = 0.128;
     // keep the face and the underside inside the skull
-    const face = n.z > 0.2 && n.y < 0.42;
-    const under = n.y < -0.15 && !(style === 'ponytail' && n.z < -0.4);
+    const bowl = style === 'bowl';
+    const face = n.z > 0.2 && n.y < (bowl ? 0.5 : 0.42);
+    const under = n.y < (bowl ? 0.02 : -0.15) && !((style === 'ponytail' || style === 'wild') && n.z < -0.4);
     if (face || under) r = 0.1;
     else {
       let f = 0;
       for (const s of dirs) f = Math.max(f, Math.pow(Math.max(0, n.dot(s.d)), s.sharp) * s.len);
       r += f;
       if (style === 'ponytail' && n.z < -0.3 && n.y < 0.2) r += 0.012 * (1 - n.y); // hair hanging down the back
+      if (style === 'wild' && n.z < -0.2) r += 0.03 * (1 - n.y);
     }
     p.setXYZ(i, n.x * r, n.y * r, n.z * r);
   }
@@ -407,11 +491,13 @@ function sculptHead(female) {
   return geo;
 }
 
-function buildHair(head, style, mat) {
+function buildHair(head, def, mats) {
+  const style = def.hair, mat = mats.hair;
   const hair = new THREE.Mesh(sculptHair(style), mat);
   hair.castShadow = true;
   hair.position.set(0, 0.112, -0.008);
   hair.scale.set(0.98, 1, 1.04);
+  if (style === 'bowl') hair.scale.set(1.04, 1.02, 1.06);
   head.add(hair);
   const spike = (len, r, pos, dir) => {
     const g = new THREE.ConeGeometry(r, len, 7);
@@ -429,9 +515,21 @@ function buildHair(head, style, mat) {
       const x = (i - 2) * 0.033;
       spike(0.085, 0.024, new THREE.Vector3(x, 0.205, 0.085), new THREE.Vector3(x * 2, -0.75, 1));
     }
+    // big crown spikes
+    for (let i = 0; i < 9; i++) {
+      const a = (i / 8 - 0.5) * 2.6;
+      spike(0.13, 0.035, new THREE.Vector3(Math.sin(a) * 0.07, 0.24, Math.cos(a) * 0.02 - 0.03), new THREE.Vector3(Math.sin(a) * 1.2, 1, -0.5 + Math.cos(a) * 0.4));
+    }
   } else if (style === 'swept') {
     for (let i = 0; i < 2; i++) {
       spike(0.12, 0.022, new THREE.Vector3(-0.045 + i * 0.03, 0.2, 0.095), new THREE.Vector3(0.3, -1, 0.45));
+    }
+    // long side bangs framing the face
+    for (const s of [-1, 1]) spike(0.17, 0.026, new THREE.Vector3(s * 0.085, 0.19, 0.07), new THREE.Vector3(s * 0.15, -1, 0.15));
+    // spikes jutting out the back
+    for (let i = 0; i < 6; i++) {
+      const x = (i / 5 - 0.5) * 0.14;
+      spike(0.14, 0.032, new THREE.Vector3(x, 0.2 - Math.abs(x) * 0.4, -0.08), new THREE.Vector3(x * 4, 0.35, -1));
     }
   } else if (style === 'ponytail') {
     for (let i = 0; i < 6; i++) {
@@ -442,9 +540,147 @@ function buildHair(head, style, mat) {
       // side locks framing the face
       spike(0.2, 0.028, new THREE.Vector3(s * 0.102, 0.18, 0.055), new THREE.Vector3(s * 0.08, -1, 0.05));
     }
-    const tie = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.012, 6, 12), new THREE.MeshStandardMaterial({ color: 0x7b3fc4 }));
-    tie.position.set(0, 0.2, -0.12);
+    const tie = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.012, 6, 12), mats.band);
+    tie.position.set(0, 0.12, -0.125);
     head.add(tie);
+  } else if (style === 'wild') {
+    // a curtain of long locks down the back plus bangs over one eye
+    for (let i = 0; i < 9; i++) {
+      const x = (i / 8 - 0.5) * 0.24;
+      spike(0.42 + rand(0, 0.12), 0.05, new THREE.Vector3(x, 0.17, -0.09), new THREE.Vector3(x * 1.5, -1, -0.28));
+    }
+    for (const s of [-1, 1]) spike(0.3, 0.04, new THREE.Vector3(s * 0.11, 0.17, -0.02), new THREE.Vector3(s * 0.35, -1, -0.1));
+    spike(0.17, 0.03, new THREE.Vector3(0.04, 0.21, 0.09), new THREE.Vector3(0.25, -1, 0.35));
+    spike(0.15, 0.026, new THREE.Vector3(-0.05, 0.21, 0.09), new THREE.Vector3(-0.3, -1, 0.3));
+  }
+}
+
+function buildFaceMarks(head, def, mats) {
+  if (def.marks === 'whiskers') {
+    for (const s of [-1, 1]) {
+      for (let i = 0; i < 3; i++) {
+        const w = box(0.032, 0.003, 0.004, mats.ink);
+        w.position.set(s * 0.065, 0.062 - i * 0.011, 0.094 - Math.abs(i - 1) * 0.002);
+        w.rotation.set(0, s * -0.55, s * (i - 1) * -0.18);
+        head.add(w);
+      }
+    }
+  } else if (def.marks === 'ai') {
+    // red "love" mark on the forehead + dark rings around the eyes
+    const red = new THREE.MeshBasicMaterial({ color: 0xc81a1a });
+    const k = new THREE.Mesh(new THREE.TorusGeometry(0.012, 0.0035, 6, 12), red);
+    k.position.set(-0.045, 0.16, 0.108);
+    k.rotation.y = -0.35;
+    head.add(k);
+    const k2 = box(0.025, 0.004, 0.004, red);
+    k2.position.set(-0.045, 0.172, 0.106);
+    k2.rotation.y = -0.35;
+    head.add(k2);
+    for (const s of [-1, 1]) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.021, 0.004, 6, 16), mats.ink);
+      ring.scale.set(1.3, 0.85, 0.5);
+      ring.position.set(s * 0.042, 0.112, 0.101);
+      head.add(ring);
+    }
+  } else if (def.marks === 'brows') {
+    for (const s of [-1, 1]) {
+      const b = box(0.05, 0.02, 0.016, mats.brow);
+      b.position.set(s * 0.042, 0.142, 0.106);
+      b.rotation.z = s * -0.1;
+      head.add(b);
+    }
+  }
+}
+
+/** Character-specific costume pieces: cloak, gourd, samurai armour, rope belt. */
+function buildOutfit(J, def, mats, b) {
+  if (def.cloak) {
+    const cloudMat = new THREE.MeshBasicMaterial({ color: def.cloak.cloud });
+    const cloudRim = new THREE.MeshBasicMaterial({ color: 0xf2f0ee });
+    const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.2 * b, 0.33 * b, 0.62, 18, 1, true), mats.jacket);
+    skirt.position.y = -0.22;
+    J.hips.add(skirt);
+    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.17, 0.16, 18, 1, true), mats.jacket);
+    collar.position.y = 0.31;
+    J.chest.add(collar);
+    const cloud = (parent, x, y, z, ry, sc = 1) => {
+      for (const [dx, dy, r] of [[0, 0, 0.03], [0.03, 0.008, 0.024], [-0.03, 0.006, 0.022], [0.012, 0.022, 0.02]]) {
+        const off = new THREE.Vector3(dx * sc, dy * sc, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), ry);
+        const w = sphere(r * 1.25 * sc, cloudRim, 8, 6);
+        w.scale.z = 0.25;
+        w.rotation.y = ry;
+        w.position.set(x + off.x, y + off.y, z + off.z);
+        const c = sphere(r * sc, cloudMat, 8, 6);
+        c.scale.z = 0.3;
+        c.rotation.y = ry;
+        c.position.set(x + off.x + Math.sin(ry) * 0.005, y + off.y, z + off.z + Math.cos(ry) * 0.005);
+        parent.add(w, c);
+      }
+    };
+    cloud(J.chest, 0.09 * b, 0.16, 0.145 * b, 0.35);
+    cloud(J.chest, -0.06 * b, 0.08, -0.16 * b, Math.PI, 1.3);
+    cloud(J.hips, 0.2 * b, -0.36, 0.2 * b, 0.8, 1.2);
+    cloud(J.hips, -0.22 * b, -0.42, -0.19 * b, Math.PI + 0.7, 1.2);
+  }
+  if (def.gourd) {
+    const sandMat = new THREE.MeshToonMaterial({ color: 0xb48a58, gradientMap });
+    const big = sphere(0.17, sandMat, 18, 14);
+    big.scale.set(1, 1.05, 0.85);
+    big.position.set(0, 0.02, -0.27 * b);
+    const small = sphere(0.11, sandMat, 16, 12);
+    small.position.set(0, 0.28, -0.25 * b);
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, 0.08, 10), sandMat);
+    neck.position.set(0, 0.42, -0.24 * b);
+    const cork = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.04, 10), mats.accent);
+    cork.position.set(0, 0.47, -0.24 * b);
+    const strap = new THREE.Mesh(new THREE.TorusGeometry(0.2 * b, 0.018, 6, 28), mats.accent);
+    strap.scale.set(0.95, 1.25, 0.75);
+    strap.position.set(0, 0.12, -0.02);
+    strap.rotation.set(0, 0, 0.75);
+    J.chest.add(big, small, neck, cork, strap);
+  }
+  if (def.armor) {
+    for (let i = 0; i < 4; i++) {
+      const plate = box(0.34 * b, 0.05, 0.3 * b, mats.jacket);
+      plate.position.set(0, 0.03 + i * 0.065, 0);
+      plate.scale.set(1 - i * 0.04, 1, 1);
+      J.chest.add(plate);
+    }
+    for (const s of [-1, 1]) {
+      for (let i = 0; i < 3; i++) {
+        const sp = box(0.15, 0.035, 0.17, mats.jacket);
+        sp.position.set(s * (0.26 + i * 0.015) * b, 0.27 - i * 0.05, 0);
+        sp.rotation.z = s * (0.5 + i * 0.12);
+        J.chest.add(sp);
+      }
+      const tasset = box(0.13, 0.22, 0.03, mats.jacket);
+      tasset.geometry.translate(0, -0.11, 0);
+      tasset.position.set(s * 0.13 * b, 0.02, 0.12 * b);
+      tasset.rotation.set(0.12, s * -0.3, 0);
+      J.hips.add(tasset);
+      const st = box(0.13, 0.22, 0.03, mats.jacket);
+      st.geometry.translate(0, -0.11, 0);
+      st.position.set(s * 0.2 * b, 0.02, 0);
+      st.rotation.set(0, s * Math.PI / 2, s * 0.15);
+      J.hips.add(st);
+    }
+    const back = box(0.26 * b, 0.32, 0.03, mats.jacket);
+    back.geometry.translate(0, -0.16, 0);
+    back.position.set(0, 0.02, -0.15 * b);
+    back.rotation.x = -0.15;
+    J.hips.add(back);
+  }
+  if (def.rope) {
+    const ropeMat = new THREE.MeshToonMaterial({ color: def.rope, gradientMap });
+    const rope = new THREE.Mesh(new THREE.TorusGeometry(0.19 * b, 0.026, 8, 30), ropeMat);
+    rope.rotation.x = Math.PI / 2;
+    rope.scale.set(1.12, 0.84, 1);
+    rope.position.y = 0.04;
+    J.hips.add(rope);
+    const bow = sphere(0.05, ropeMat, 10, 8);
+    bow.scale.set(1.4, 0.8, 0.6);
+    bow.position.set(0, 0.03, -0.17 * b);
+    J.hips.add(bow);
   }
 }
 

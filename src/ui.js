@@ -170,8 +170,10 @@ export class UI {
       <div class="stat" style="color:#7fe08a"><b>Sinh lực</b>${bar(c.stats.hp)}</div>
       <div class="stat" style="color:#6fd0ff"><b>Tốc độ</b>${bar(c.stats.speed)}</div>
       <div class="stat" style="color:#ff8a5a"><b>Sức mạnh</b>${bar(c.stats.power)}</div>
-      <div class="mv"><b>${c.special.name}</b>${c.special.desc}</div>
-      <div class="mv"><b>★ ${c.ultimate.name}</b>${c.ultimate.desc}</div>`;
+      <div class="mv"><b><kbd>L</kbd>${c.special.name}</b>${c.special.desc}</div>
+      <div class="mv"><b><kbd>;</kbd>${c.special2.name}</b>${c.special2.desc}</div>
+      <div class="mv ult"><b><kbd>O</kbd>★ ${c.ultimate.name}</b>${c.ultimate.desc}</div>
+      <div class="mv awk"><b><kbd>P</kbd>Khai Nhãn: ${c.awaken.name}</b>Khi máu dưới 45% — sức mạnh +20%, tốc độ +15%, hồi chakra</div>`;
     this.g.onSelectHighlight(c, this.sel.step);
   }
 
@@ -261,7 +263,12 @@ export class UI {
       $(`${p}HpLag`).style.width = `${Math.max(0, f.dispHp / f.maxHp) * 100}%`;
       $(`${p}Ck`).style.width = `${f.chakra}%`;
       $(`${p}Ck`).parentElement.classList.toggle('full', f.chakra >= 100);
-      $(`${p}CkLabel`).textContent = f.chakra >= 100 ? 'TUYỆT KỸ SẴN SÀNG!' : `CHAKRA ${Math.floor(f.chakra)}`;
+      let label = f.chakra >= 100 ? 'TUYỆT KỸ SẴN SÀNG!' : `CHAKRA ${Math.floor(f.chakra)}`;
+      if (f.awakened > 0) label += ` · KHAI NHÃN ${Math.ceil(f.awakened)}s`;
+      else if (f.canAwaken()) label += ' · KHAI NHÃN SẴN SÀNG!';
+      $(`${p}CkLabel`).textContent = label;
+      $(`${p}Ck`).parentElement.classList.toggle('awake', f.awakened > 0);
+      $(`${p}Portrait`).classList.toggle('awake', f.awakened > 0);
       const subs = $(`${p}Subs`);
       if (subs.childElementCount !== 4) subs.innerHTML = '<i></i><i></i><i></i><i></i>';
       [...subs.children].forEach((c, k) => c.classList.toggle('on', k < f.subs));
@@ -272,7 +279,7 @@ export class UI {
     const t = $('timer');
     t.textContent = infinite ? '∞' : Math.max(0, Math.ceil(time));
     t.classList.toggle('low', !infinite && time < 10);
-    const stage = this.g.cfg?.mode === 'arcade' ? `ẢI ${this.g.arcade.stage + 1}/3 · ` : '';
+    const stage = this.g.cfg?.mode === 'arcade' ? `ẢI ${this.g.arcade.stage + 1}/${this.g.arcade.ladder.length} · ` : '';
     $('roundLabel').textContent = infinite ? 'LUYỆN TẬP' : `${stage}HIỆP ${round}`;
   }
 
@@ -319,16 +326,18 @@ export class UI {
     $('letterbox').classList.toggle('on', on);
   }
 
-  jutsuBanner(f, on) {
+  jutsuBanner(f, on, kind = 'ultimate') {
     const jb = $('jutsuBanner');
     if (!on) {
       jb.classList.remove('show');
       return;
     }
-    $('jbKanji').textContent = f.def.kanji;
-    $('jbKanji').style.color = hex(f.def.colors.chakra);
-    $('jbOwner').textContent = `${f.def.name} · TUYỆT KỸ`;
-    $('jbName').textContent = f.def.ultimate.name;
+    const awk = kind === 'awaken';
+    $('jbKanji').textContent = awk ? '覚' : f.def.kanji;
+    $('jbKanji').style.color = hex(awk ? f.def.awaken.color : f.def.colors.chakra);
+    $('jbOwner').textContent = `${f.def.name} · ${awk ? 'KHAI NHÃN' : 'TUYỆT KỸ'}`;
+    $('jbName').textContent = awk ? f.def.awaken.name : f.def.ultimate.name;
+    jb.style.setProperty('--jc', hex(awk ? f.def.awaken.color : f.def.colors.chakra));
     jb.classList.toggle('right', f.index === 1);
     jb.classList.add('show');
   }
